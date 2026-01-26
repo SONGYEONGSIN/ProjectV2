@@ -728,12 +728,12 @@ function Wallet(props: React.SVGProps<SVGSVGElement>) {
 function PiggyBank(props: React.SVGProps<SVGSVGElement>) {
   return <Building {...props} />;
 }
-function ArrowRight(props: React.SVGProps<SVGSVGElement>) {
+function ArrowRight({ size = 24, ...props }: React.SVGProps<SVGSVGElement> & { size?: number }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

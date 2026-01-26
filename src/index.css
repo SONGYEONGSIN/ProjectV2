@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Neo-Brutalism PRD Specs */
+  --font-size: 16px;
+  --background: #FFFFFF;
+  --foreground: #000000;
+  --card: #FFFFFF;
+  --card-foreground: #000000;
+  --popover: #FFFFFF;
+  --popover-foreground: #000000;
+  
+  /* PRD Accents */
+  --primary: #000000;
+  --primary-foreground: #FFFFFF;
+  --secondary: #FFFFFF;
+  --secondary-foreground: #000000;
+  
+  /* Accents */
+  --accent-orange: #FF6B35;
+  --accent-yellow: #F7CB15;
+  --accent-cyan: #00D9FF;
+  
+  --muted: #e0e0e0;
+  --muted-foreground: #555555;
+  
+  --destructive: #FF0000;
+  --destructive-foreground: #FFFFFF;
+  
+  --border: #000000;
+  --input: #FFFFFF;
+  --ring: #00D9FF;
+  
+  --radius: 0px; 
+  --shadow-hard: 4px 4px 0px 0px #000000;
+  --shadow-hover: 2px 2px 0px 0px #000000;
+  --border-width: 3px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent-cyan);
+  --color-accent-foreground: var(--primary);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  
+  /* Custom Neo-Brutalism Accents */
+  --color-neo-orange: var(--accent-orange);
+  --color-neo-yellow: var(--accent-yellow);
+  --color-neo-cyan: var(--accent-cyan);
+  --color-neo-black: #000000;
+  --color-neo-white: #FFFFFF;
+
+  /* Fonts */
+  --font-head: "Lexend Mega", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border box-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+    background-image: radial-gradient(#000000 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-head font-black tracking-tighter uppercase;
+  }
+}
+
+@layer components {
+  /* Neo-Brutalism Component Styles */
+  .neo-btn {
+    @apply bg-neo-orange text-neo-black border-[3px] border-neo-black px-8 py-4 font-bold cursor-pointer transition-transform shadow-[4px_4px_0px_0px_#000000] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000000] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none flex items-center justify-center gap-2;
+  }
+  
+  .neo-card {
+    @apply bg-white border-[3px] border-neo-black shadow-[8px_8px_0px_0px_#000000] p-6;
+  }
+  
+  .neo-input {
+    @apply w-full bg-white border-[3px] border-neo-black p-3 font-semibold text-lg focus:outline-none focus:shadow-[0_0_0_4px_#00D9FF] placeholder:text-gray-400;
+  }
+
+  .neo-badge {
+    @apply inline-flex items-center px-3 py-1 border-[2px] border-neo-black font-bold text-xs uppercase;
+  }
+  
+  .neo-nav-item {
+    @apply px-4 py-2 font-bold border-[2px] border-transparent hover:border-neo-black hover:bg-neo-yellow transition-all cursor-pointer;
+  }
+  
+  .neo-nav-item.active {
+    @apply bg-neo-black text-white border-neo-black;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  @keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  
+  .animate-marquee {
+    animation: marquee 20s linear infinite;
+  }
+}

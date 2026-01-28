@@ -21,6 +21,8 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { saveTaxData, loadAdminData } from "@/lib/tax-store";
+import { TaxData } from "@/lib/ai-recommendation";
 
 // 숫자 포맷 함수
 function formatNumber(num: number): string {
@@ -283,7 +285,7 @@ export default function CalculatorPage() {
         mealAllowance: 2400000,      // 비과세(식대) - 연간 (월 20만원 x 12)
         childrenUnder6: 1,           // 6세 이하 자녀 수
         salary: 56822780,            // 총급여액 (자동 계산됨)
-        withheldTax: 3200000,        // 기납부세액 (원천징수세액)
+        withheldTax: 1267560,        // 기납부세액 (원천징수세액)
         // 인적공제 상세
         spouse: 0,                   // 배우자 (0 또는 1)
         parents: 0,                  // 직계존속 (만60세 이상)
@@ -298,38 +300,38 @@ export default function CalculatorPage() {
         employmentInsurance: 511390, // 고용보험료
         // 카드 사용액
         cardChildren: 0,             // 카드 소득공제 자녀 수
-        creditCard: 15665472,        // 신용카드
-        debitCard: 3000000,          // 체크카드
-        cash: 2000000,               // 현금영수증
-        traditionalMarket: 500000,   // 전통시장
-        publicTransport: 960000,     // 대중교통
-        culture: 300000,             // 문화체육
+        creditCard: 15241850,        // 신용카드
+        debitCard: 11036540,         // 체크카드
+        cash: 6162286,               // 현금영수증
+        traditionalMarket: 1984300,  // 전통시장
+        publicTransport: 1358970,    // 대중교통
+        culture: 203767,             // 문화체육
         // 의료비
         infertility: 0,              // 난임시술비
         premature: 0,                // 미숙아·선천성이상아
-        selfDisabledSenior: 0,       // 본인/장애인/만65세이상/6세이하
-        otherFamily: 1856340,        // 그 밖의 부양가족
+        selfDisabledSenior: 454200,  // 본인/장애인/만65세이상/6세이하
+        otherFamily: 1402140,        // 그 밖의 부양가족
         insuranceReimbursement: 467488, // 실손의료보험금
         medical: 1388852,            // 의료비 합계
         // 교육비
         selfEducation: 0,            // 본인 교육비
-        preschool: 2000000,          // 미취학 자녀
-        elementary: 2000000,         // 초중고
-        university: 2000000,         // 대학
-        education: 6000000,          // 교육비 합계
+        preschool: 180000,           // 미취학 자녀
+        elementary: 1448170,         // 초중고
+        university: 0,               // 대학
+        education: 1628170,          // 교육비 합계
         // 주택자금
-        housingSubscription: 2400000, // 주택청약저축
+        housingSubscription: 0,      // 주택청약저축
         rentLoanPayment: 0,          // 주택임차차입금 원리금상환액
         mortgageInterest: 0,         // 장기주택저당차입금 이자상환액
         monthlyRent: 0,              // 월세 세액공제
-        housing: 2400000,            // 주택자금 합계
+        housing: 0,                  // 주택자금 합계
         // 연금 및 보험
-        pensionSavings: 4000000,     // 연금저축
-        irp: 0,                      // 퇴직연금(IRP)
+        pensionSavings: 6000000,     // 연금저축
+        irp: 3000000,                // 퇴직연금(IRP)
         isaTransfer: 0,              // ISA 만기 전환금액
         generalInsurance: 1000000,   // 일반 보장성 보험료
         disabledInsurance: 0,        // 장애인 전용 보장성 보험료
-        pension: 4000000,            // 연금계좌 합계
+        pension: 9000000,            // 연금계좌 합계
         // 기부금
         politicalDonation: 100000,   // 정치자금 기부금
         hometownDonation: 100000,    // 고향사랑 기부금
@@ -398,6 +400,34 @@ export default function CalculatorPage() {
             const taxResult = calculateTax(inputs);
             setResult(taxResult);
             setIsCalculating(false);
+
+            // AI 추천을 위해 세금 데이터 저장
+            const taxData: TaxData = {
+                annualSalary: inputs.annualSalary,
+                salary: inputs.salary,
+                withheldTax: inputs.withheldTax,
+                dependents: inputs.dependents,
+                spouse: inputs.spouse,
+                children: inputs.children,
+                nationalPension: inputs.nationalPension,
+                healthInsurance: inputs.healthInsurance,
+                creditCard: inputs.creditCard,
+                debitCard: inputs.debitCard,
+                cash: inputs.cash,
+                traditionalMarket: inputs.traditionalMarket,
+                publicTransport: inputs.publicTransport,
+                medical: inputs.medical,
+                education: inputs.education,
+                housingSubscription: inputs.housingSubscription,
+                monthlyRent: inputs.monthlyRent,
+                pensionSavings: inputs.pensionSavings,
+                irp: inputs.irp,
+                generalInsurance: inputs.generalInsurance,
+                politicalDonation: inputs.politicalDonation,
+                hometownDonation: inputs.hometownDonation,
+                designatedDonation: inputs.designatedDonation,
+            };
+            saveTaxData(taxData);
         }, 500);
     };
 
@@ -406,8 +436,46 @@ export default function CalculatorPage() {
 
     const handleLoadData = () => {
         setIsLoadingData(true);
-        // TODO: 실제 기초자료 가져오기 로직 구현
-        setTimeout(() => setIsLoadingData(false), 500);
+
+        const adminData = loadAdminData(2025); // 현재 연도 기본값
+        if (adminData) {
+            // Admin 데이터를 Calculator inputs에 매핑
+            setInputs(prev => ({
+                ...prev,
+                // 급여 정보
+                annualSalary: adminData.salary.totalSalary,
+                mealAllowance: adminData.salary.mealAllowance || 0,
+                childrenUnder6: adminData.salary.childrenUnder6 || 0,
+                salary: adminData.salary.totalSalary - (adminData.salary.mealAllowance || 0),
+                withheldTax: adminData.salary.prepaidTax || 0,  // 기납부세액
+                nationalPension: adminData.salary.nationalPension,
+                healthInsurance: adminData.salary.healthInsurance,
+                longTermCare: adminData.salary.longTermCare || 0,
+                employmentInsurance: adminData.salary.employmentInsurance || 0,
+                // 카드 사용액
+                creditCard: adminData.spending.creditCard,
+                debitCard: adminData.spending.debitCard,
+                cash: adminData.spending.cash,
+                publicTransport: adminData.spending.publicTransport,
+                traditionalMarket: adminData.spending.traditionalMarket || 0,
+                culture: adminData.spending.culture || 0,
+                // 가족정보 → 인적공제
+                spouse: adminData.family?.spouse ? 1 : 0,
+                children: adminData.family?.children || 0,
+                parents: adminData.family?.parents || 0,
+                siblings: adminData.family?.siblings || 0,
+                foster: adminData.family?.foster || 0,
+                recipient: adminData.family?.recipient || 0,
+                cardChildren: adminData.family?.children || 0,  // 카드공제 한도 확대용
+            }));
+            setTimeout(() => setIsLoadingData(false), 300);
+        } else {
+            // 데이터가 없으면 알림
+            setTimeout(() => {
+                setIsLoadingData(false);
+                alert("저장된 기초자료가 없습니다. 기초자료 페이지에서 데이터를 먼저 입력해주세요.");
+            }, 300);
+        }
     };
 
     const handleReset = () => {
@@ -458,6 +526,13 @@ export default function CalculatorPage() {
             generalInsurance: 0,
             disabledInsurance: 0,
             pension: 0,
+            politicalDonation: 0,
+            hometownDonation: 0,
+            hometownDisaster: 0,
+            specialDonation: 0,
+            employeeDonation: 0,
+            designatedDonation: 0,
+            religiousDonation: 0,
         });
         setResult(null);
         setTimeout(() => setIsResetting(false), 300);
@@ -624,13 +699,13 @@ export default function CalculatorPage() {
                                                     <h4 className="font-black text-sm border-b-2 border-black pb-2">기본공제 (본인/배우자)</h4>
                                                     <div className="grid grid-cols-2 gap-4">
                                                         <div className="space-y-2">
-                                                            <label className="font-bold text-sm">본인공제</label>
+                                                            <label className="font-bold text-sm h-6 flex items-center">본인공제</label>
                                                             <div className="neo-input bg-gray-100 text-gray-500 cursor-not-allowed">
                                                                 150만원 (고정)
                                                             </div>
                                                         </div>
                                                         <div className="space-y-2">
-                                                            <label className="font-bold flex items-center gap-2 text-sm">
+                                                            <label className="font-bold flex items-center gap-2 text-sm h-6">
                                                                 배우자공제
                                                                 <Tooltip content="근로소득자: 연봉 500만원 이하 / 다른소득자: 소득금액 100만원 이하">
                                                                     <Info size={14} className="text-gray-400 cursor-help" />
@@ -642,7 +717,7 @@ export default function CalculatorPage() {
                                                                         key={num}
                                                                         onClick={() => handleInputChange("spouse", num)}
                                                                         className={clsx(
-                                                                            "flex-1 h-[50px] border-[3px] border-black font-bold transition-colors text-sm",
+                                                                            "flex-1 p-3 border-[3px] border-black font-semibold text-lg transition-colors",
                                                                             inputs.spouse === num ? "bg-black text-white" : "bg-white hover:bg-gray-100"
                                                                         )}
                                                                     >
@@ -1448,7 +1523,7 @@ export default function CalculatorPage() {
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
                                                                 주택청약저축 납입액 (원)
-                                                                <Tooltip content="연간 300만원 한도, 40% 소득공제">
+                                                                <Tooltip content="연 납입액 최대 300만원 한도, 40% 소득공제">
                                                                     <Info size={14} className="text-gray-400 cursor-help" />
                                                                 </Tooltip>
                                                             </label>
@@ -1462,7 +1537,7 @@ export default function CalculatorPage() {
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
                                                                 주택임차차입금 원리금상환액 (원)
-                                                                <Tooltip content="연간 400만원 한도, 40% 소득공제">
+                                                                <Tooltip content="연간 상환액의 40% 소득 공제, 연간 최대 400만원까지 공제">
                                                                     <Info size={14} className="text-gray-400 cursor-help" />
                                                                 </Tooltip>
                                                             </label>
@@ -1508,29 +1583,71 @@ export default function CalculatorPage() {
                                                 <div className="bg-neo-cyan/20 p-4 border-2 border-black space-y-2">
                                                     <p className="font-bold text-sm">계산식</p>
                                                     <div className="text-sm space-y-1">
-                                                        <p className="font-semibold">▸ 소득공제</p>
-                                                        <p>주택청약저축: {formatNumber(Math.min(inputs.housingSubscription, 3000000))}원 × 40% (한도 300만원)</p>
-                                                        <p>주택임차차입금: {formatNumber(Math.min(inputs.rentLoanPayment, 4000000))}원 × 40% (한도 400만원)</p>
-                                                        <p>장기주택저당차입금: {formatNumber(inputs.mortgageInterest)}원 (전액 공제)</p>
-                                                        <p className="font-semibold border-t border-black pt-1 mt-2">▸ 세액공제</p>
-                                                        <p>월세: {formatNumber(Math.min(inputs.monthlyRent, 10000000))}원 × {inputs.salary <= 55000000 ? "17%" : "15%"} (한도 1,000만원)</p>
+                                                        {((inputs.housingSubscription > 0 && inputs.salary <= 70000000) || inputs.rentLoanPayment > 0 || inputs.mortgageInterest > 0) && (
+                                                            <>
+                                                                <p className="font-semibold">▸ 소득공제</p>
+                                                                {inputs.housingSubscription > 0 && inputs.salary <= 70000000 && (
+                                                                    <p>주택청약저축: {formatNumber(Math.min(inputs.housingSubscription, 3000000))}원 × 40% (연간 납입액 한도 300만원)</p>
+                                                                )}
+                                                                {inputs.housingSubscription > 0 && inputs.salary > 70000000 && (
+                                                                    <p className="text-red-500">주택청약저축: 총급여 7천만원 초과로 공제 제외</p>
+                                                                )}
+                                                                {inputs.rentLoanPayment > 0 && (
+                                                                    <p>주택임차차입금: {formatNumber(Math.min(inputs.rentLoanPayment, 4000000))}원 × 40% (연간 공제 한도 400만원)</p>
+                                                                )}
+                                                                {inputs.mortgageInterest > 0 && (
+                                                                    <p>장기주택저당차입금: {formatNumber(inputs.mortgageInterest)}원 (전액 공제)</p>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                        {inputs.monthlyRent > 0 && (
+                                                            <>
+                                                                <p className="font-semibold border-t border-black pt-1 mt-2">▸ 세액공제</p>
+                                                                <p>월세: {formatNumber(Math.min(inputs.monthlyRent, 10000000))}원 × {inputs.salary <= 55000000 ? "17%" : "15%"} (한도 1,000만원)</p>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
 
                                                 {/* 주택자금 공제 합계 */}
                                                 <div className="bg-neo-yellow p-4 border-2 border-black">
-                                                    <p className="font-bold mb-1">주택자금 소득공제</p>
+                                                    <p className="font-bold mb-1">주택자금 공제</p>
                                                     <p className="text-2xl font-black">
                                                         {formatNumber(
-                                                            Math.round(Math.min(inputs.housingSubscription, 3000000) * 0.4) +
+                                                            (inputs.salary <= 70000000 ? Math.round(Math.min(inputs.housingSubscription, 3000000) * 0.4) : 0) +
                                                             Math.round(Math.min(inputs.rentLoanPayment, 4000000) * 0.4) +
-                                                            inputs.mortgageInterest
+                                                            inputs.mortgageInterest +
+                                                            Math.round(Math.min(inputs.monthlyRent, 10000000) * (inputs.salary <= 55000000 ? 0.17 : 0.15))
                                                         )}원
                                                     </p>
-                                                    <p className="text-sm text-gray-600 mt-2 border-t border-black pt-2">
-                                                        <span className="font-bold">월세 세액공제:</span> {formatNumber(Math.round(Math.min(inputs.monthlyRent, 10000000) * (inputs.salary <= 55000000 ? 0.17 : 0.15)))}원
-                                                    </p>
-                                                    <p className="text-sm text-gray-600 mt-1">💡 무주택 세대주 요건 충족 시 적용</p>
+                                                    <div className="text-sm text-gray-600 mt-2 border-t border-black pt-2 space-y-1">
+                                                        {((inputs.housingSubscription > 0 && inputs.salary <= 70000000) || inputs.rentLoanPayment > 0 || inputs.mortgageInterest > 0) && (
+                                                            <p>• <span className="font-bold">소득공제:</span> {formatNumber(
+                                                                (inputs.salary <= 70000000 ? Math.round(Math.min(inputs.housingSubscription, 3000000) * 0.4) : 0) +
+                                                                Math.round(Math.min(inputs.rentLoanPayment, 4000000) * 0.4) +
+                                                                inputs.mortgageInterest
+                                                            )}원</p>
+                                                        )}
+                                                        {inputs.housingSubscription > 0 && inputs.salary <= 70000000 && (
+                                                            <p className="pl-4 text-xs">- 주택청약저축: {formatNumber(Math.round(Math.min(inputs.housingSubscription, 3000000) * 0.4))}원</p>
+                                                        )}
+                                                        {inputs.housingSubscription > 0 && inputs.salary > 70000000 && (
+                                                            <p className="pl-4 text-xs text-red-500">- 주택청약저축: 총급여 7천만원 초과로 공제 제외</p>
+                                                        )}
+                                                        {inputs.rentLoanPayment > 0 && (
+                                                            <p className="pl-4 text-xs">- 주택임차차입금: {formatNumber(Math.round(Math.min(inputs.rentLoanPayment, 4000000) * 0.4))}원</p>
+                                                        )}
+                                                        {inputs.mortgageInterest > 0 && (
+                                                            <p className="pl-4 text-xs">- 장기주택저당차입금: {formatNumber(inputs.mortgageInterest)}원</p>
+                                                        )}
+                                                        {inputs.monthlyRent > 0 && (
+                                                            <p>• <span className="font-bold">세액공제:</span> {formatNumber(Math.round(Math.min(inputs.monthlyRent, 10000000) * (inputs.salary <= 55000000 ? 0.17 : 0.15)))}원</p>
+                                                        )}
+                                                        {inputs.monthlyRent > 0 && (
+                                                            <p className="pl-4 text-xs">- 월세: {formatNumber(Math.round(Math.min(inputs.monthlyRent, 10000000) * (inputs.salary <= 55000000 ? 0.17 : 0.15)))}원</p>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-gray-600 mt-1">💡 무주택 세대주 요건 충족 시 적용 (주택청약저축은 총급여 7천만원 이하)</p>
                                                 </div>
                                             </>
                                         )}
@@ -1655,22 +1772,35 @@ export default function CalculatorPage() {
                                                     </div>
                                                 </div>
 
-                                                {/* 연금계좌 공제 합계 */}
+                                                {/* 연금계좌·보험료 공제 합계 */}
                                                 <div className="bg-neo-yellow p-4 border-2 border-black">
-                                                    <p className="font-bold mb-1">연금계좌 세액공제</p>
+                                                    <p className="font-bold mb-1">연금계좌·보험료 세액공제</p>
                                                     <p className="text-2xl font-black">
                                                         {formatNumber(Math.round(
                                                             (Math.min(inputs.pensionSavings, 6000000) +
                                                                 Math.min(inputs.irp, 9000000 - Math.min(inputs.pensionSavings, 6000000)) +
                                                                 Math.min(inputs.isaTransfer * 0.1, 3000000)) * 0.12
-                                                        ))}원
-                                                    </p>
-                                                    <p className="text-sm text-gray-600 mt-2 border-t border-black pt-2">
-                                                        <span className="font-bold">보장성 보험료 세액공제:</span> {formatNumber(
-                                                            Math.round(Math.min(inputs.generalInsurance, 1000000) * 0.12) +
+                                                        ) + Math.round(Math.min(inputs.generalInsurance, 1000000) * 0.12) +
                                                             Math.round(Math.min(inputs.disabledInsurance, 1000000) * 0.15)
                                                         )}원
                                                     </p>
+                                                    <div className="text-sm text-gray-600 mt-2 border-t border-black pt-2 space-y-1">
+                                                        <p>• <span className="font-bold">연금계좌:</span> {formatNumber(Math.round(
+                                                            (Math.min(inputs.pensionSavings, 6000000) +
+                                                                Math.min(inputs.irp, 9000000 - Math.min(inputs.pensionSavings, 6000000)) +
+                                                                Math.min(inputs.isaTransfer * 0.1, 3000000)) * 0.12
+                                                        ))}원 세액공제</p>
+                                                        <p>• <span className="font-bold">보험료:</span> {formatNumber(
+                                                            Math.round(Math.min(inputs.generalInsurance, 1000000) * 0.12) +
+                                                            Math.round(Math.min(inputs.disabledInsurance, 1000000) * 0.15)
+                                                        )}원 세액공제</p>
+                                                        {inputs.generalInsurance > 0 && (
+                                                            <p className="pl-4 text-xs">- 일반 보장성: {formatNumber(Math.round(Math.min(inputs.generalInsurance, 1000000) * 0.12))}원</p>
+                                                        )}
+                                                        {inputs.disabledInsurance > 0 && (
+                                                            <p className="pl-4 text-xs">- 장애인 전용: {formatNumber(Math.round(Math.min(inputs.disabledInsurance, 1000000) * 0.15))}원</p>
+                                                        )}
+                                                    </div>
                                                     <p className="text-sm text-gray-600 mt-1">💡 연금저축 + IRP 합계 최대 900만원, ISA 전환 추가 300만원</p>
                                                 </div>
                                             </>
@@ -1931,7 +2061,7 @@ export default function CalculatorPage() {
 
                                                 {/* 기부금 공제 합계 */}
                                                 <div className="bg-neo-yellow p-4 border-2 border-black">
-                                                    <p className="font-bold mb-1">❤️ 기부금 세액공제</p>
+                                                    <p className="font-bold mb-1">💗 기부금 세액공제</p>
                                                     <p className="text-2xl font-black">
                                                         {(() => {
                                                             // 정치자금
@@ -1970,15 +2100,30 @@ export default function CalculatorPage() {
                                                             return formatNumber(Math.round(totalDeduction));
                                                         })()}원
                                                     </p>
-                                                    <p className="text-sm text-gray-600 mt-2 border-t border-black pt-2">
+                                                    <div className="text-sm text-gray-600 mt-2 border-t border-black pt-2 space-y-1">
                                                         {inputs.politicalDonation > 0 && (
-                                                            <span>정치자금: {formatNumber(Math.round(Math.min(inputs.politicalDonation, 100000) * (100 / 110) + Math.min(Math.max(0, inputs.politicalDonation - 100000), 30000000) * 0.15 + Math.max(0, inputs.politicalDonation - 100000 - 30000000) * 0.25))}원 | </span>
+                                                            <p>• <span className="font-bold">정치자금:</span> {formatNumber(Math.round(Math.min(inputs.politicalDonation, 100000) * (100 / 110) + Math.min(Math.max(0, inputs.politicalDonation - 100000), 30000000) * 0.15 + Math.max(0, inputs.politicalDonation - 100000 - 30000000) * 0.25))}원 세액공제</p>
                                                         )}
                                                         {inputs.hometownDonation > 0 && (
-                                                            <span>고향사랑: {formatNumber(Math.round(Math.min(Math.min(inputs.hometownDonation, 20000000), 100000) * (100 / 110) + Math.max(0, Math.min(inputs.hometownDonation, 20000000) - 100000) * 0.15))}원 | </span>
+                                                            <p>• <span className="font-bold">고향사랑:</span> {formatNumber(Math.round(Math.min(Math.min(inputs.hometownDonation, 20000000), 100000) * (100 / 110) + Math.max(0, Math.min(inputs.hometownDonation, 20000000) - 100000) * 0.15))}원 세액공제</p>
                                                         )}
-                                                        총 기부액: {formatNumber(inputs.politicalDonation + inputs.hometownDonation + inputs.hometownDisaster + inputs.specialDonation + inputs.employeeDonation + inputs.designatedDonation + inputs.religiousDonation)}원
-                                                    </p>
+                                                        {inputs.hometownDisaster > 0 && (
+                                                            <p>• <span className="font-bold">고향사랑 특별재난:</span> {formatNumber(Math.round(Math.min(Math.min(inputs.hometownDisaster, Math.max(0, 20000000 - Math.min(inputs.hometownDonation, 20000000))), 100000) * (100 / 110) + Math.max(0, Math.min(inputs.hometownDisaster, Math.max(0, 20000000 - Math.min(inputs.hometownDonation, 20000000))) - 100000) * 0.30))}원 세액공제</p>
+                                                        )}
+                                                        {inputs.specialDonation > 0 && (
+                                                            <p>• <span className="font-bold">특례기부금:</span> {formatNumber(Math.round(Math.min(inputs.specialDonation, 10000000) * 0.15 + Math.max(0, inputs.specialDonation - 10000000) * 0.30))}원 세액공제</p>
+                                                        )}
+                                                        {inputs.employeeDonation > 0 && (
+                                                            <p>• <span className="font-bold">우리사주조합:</span> {formatNumber(Math.round(Math.min(Math.min(inputs.employeeDonation, inputs.salary * 0.30), 10000000) * 0.15 + Math.max(0, Math.min(inputs.employeeDonation, inputs.salary * 0.30) - 10000000) * 0.30))}원 세액공제</p>
+                                                        )}
+                                                        {inputs.designatedDonation > 0 && (
+                                                            <p>• <span className="font-bold">일반기부금(종교단체 외):</span> {formatNumber(Math.round(Math.min(Math.min(inputs.designatedDonation, inputs.salary * 0.30), 10000000) * 0.15 + Math.max(0, Math.min(inputs.designatedDonation, inputs.salary * 0.30) - 10000000) * 0.30))}원 세액공제</p>
+                                                        )}
+                                                        {inputs.religiousDonation > 0 && (
+                                                            <p>• <span className="font-bold">종교단체:</span> {formatNumber(Math.round(Math.min(Math.min(inputs.religiousDonation, inputs.salary * 0.10), 10000000) * 0.15 + Math.max(0, Math.min(inputs.religiousDonation, inputs.salary * 0.10) - 10000000) * 0.30))}원 세액공제</p>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-gray-600 mt-1">💡 총 기부액: {formatNumber(inputs.politicalDonation + inputs.hometownDonation + inputs.hometownDisaster + inputs.specialDonation + inputs.employeeDonation + inputs.designatedDonation + inputs.religiousDonation)}원</p>
                                                 </div>
                                             </>
                                         )}

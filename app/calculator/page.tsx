@@ -34,11 +34,13 @@ function parseNumber(str: string): number {
     return parseInt(str.replace(/[^0-9]/g, "")) || 0;
 }
 
-// 세금 계산 함수 (간략화된 2026년 기준)
+// 세금 계산 함수 (CALCULATOR_FORMULAS.md 기준 - 2026년)
 function calculateTax(inputs: FormInputs) {
     const salary = inputs.salary;
 
-    // 근로소득공제
+    // ==========================================
+    // 1. 근로소득공제 (2026년 기준)
+    // ==========================================
     let incomeDeduction = 0;
     if (salary <= 5000000) {
         incomeDeduction = salary * 0.7;
@@ -55,46 +57,98 @@ function calculateTax(inputs: FormInputs) {
     // 근로소득금액
     const earnedIncome = salary - incomeDeduction;
 
+    // ==========================================
+    // 2. 소득공제 항목
+    // ==========================================
+
     // 인적공제 (부양가족 1인당 150만원)
     const personalDeduction = inputs.dependents * 1500000;
 
-    // 신용카드 등 소득공제
-    const minCardSpending = salary * 0.25;
-    const totalCardSpending = inputs.creditCard + inputs.debitCard;
+    // 4대보험 소득공제 (전액 공제)
+    const socialInsuranceDeduction =
+        inputs.nationalPension +
+        inputs.healthInsurance +
+        inputs.longTermCare +
+        inputs.employmentInsurance;
+
+    // 신용카드 등 소득공제 (CALCULATOR_FORMULAS.md 기준)
+    const minCardSpending = salary * 0.25; // 최소 사용금액 (총급여의 25%)
+    const totalCardSpending =
+        inputs.creditCard +
+        inputs.debitCard +
+        inputs.cash +
+        inputs.traditionalMarket +
+        inputs.publicTransport +
+        inputs.culture;
+
     let cardDeduction = 0;
     if (totalCardSpending > minCardSpending) {
-        const excess = totalCardSpending - minCardSpending;
-        // 신용카드 15%, 체크카드/현금 30%
-        const creditExcess = Math.min(inputs.creditCard, excess);
-        const debitExcess = Math.max(0, excess - creditExcess);
-        cardDeduction = creditExcess * 0.15 + debitExcess * 0.3;
-        // 한도: 연 300만원
-        cardDeduction = Math.min(cardDeduction, 3000000);
+        let remaining = totalCardSpending - minCardSpending;
+
+        // 사용유형별 공제 계산 (순서: 신용카드 → 체크카드 → 현금영수증 → 전통시장 → 대중교통 → 문화체육)
+        // 신용카드 15%
+        const creditExcess = Math.min(inputs.creditCard, remaining);
+        cardDeduction += creditExcess * 0.15;
+        remaining -= creditExcess;
+
+        // 체크카드 30%
+        const debitExcess = Math.min(inputs.debitCard, remaining);
+        cardDeduction += debitExcess * 0.30;
+        remaining -= debitExcess;
+
+        // 현금영수증 30%
+        const cashExcess = Math.min(inputs.cash, remaining);
+        cardDeduction += cashExcess * 0.30;
+        remaining -= cashExcess;
+
+        // 추가 공제 (기본한도와 별개)
+        // 전통시장 40%
+        const traditionalMarketDeduction = inputs.traditionalMarket * 0.40;
+        // 대중교통 80%
+        const publicTransportDeduction = inputs.publicTransport * 0.80;
+        // 문화체육 30%
+        const cultureDeduction = inputs.culture * 0.30;
+
+        // 기본한도: 총급여에 따라 200~300만원
+        let baseLimit = 3000000;
+        if (salary > 120000000) {
+            baseLimit = 2000000;
+        } else if (salary > 70000000) {
+            baseLimit = 2500000;
+        }
+
+        // 기본 공제액 한도 적용
+        cardDeduction = Math.min(cardDeduction, baseLimit);
+
+        // 추가한도: 전통시장 100만원, 대중교통 100만원, 문화체육 100만원
+        cardDeduction += Math.min(traditionalMarketDeduction, 1000000);
+        cardDeduction += Math.min(publicTransportDeduction, 1000000);
+        if (salary <= 70000000) { // 문화체육은 총급여 7천만원 이하만
+            cardDeduction += Math.min(cultureDeduction, 1000000);
+        }
     }
 
-    // 의료비 세액공제 (총급여 3% 초과분의 15%)
-    const medicalThreshold = salary * 0.03;
-    let medicalDeduction = 0;
-    if (inputs.medical > medicalThreshold) {
-        medicalDeduction = (inputs.medical - medicalThreshold) * 0.15;
-        medicalDeduction = Math.min(medicalDeduction, 7000000);
+    // 주택자금 소득공제
+    let housingIncomeDeduction = 0;
+    // 주택청약저축: 총급여 7천만원 이하, 40%, 한도 300만원 (납입액 연간 300만원 한도)
+    if (salary <= 70000000 && inputs.housingSubscription > 0) {
+        housingIncomeDeduction += Math.min(inputs.housingSubscription, 3000000) * 0.40;
     }
+    // 주택임차차입금 원리금상환액: 40%, 연간 공제 한도 400만원
+    housingIncomeDeduction += Math.min(inputs.rentLoanPayment * 0.40, 4000000);
+    // 장기주택저당차입금 이자상환액: 전액 공제, 300~1,800만원 한도
+    housingIncomeDeduction += Math.min(inputs.mortgageInterest, 18000000);
 
-    // 교육비 세액공제 (15%)
-    const educationDeduction = inputs.education * 0.15;
-
-    // 주택자금 공제 (40%)
-    const housingDeduction = Math.min(inputs.housing * 0.4, 3000000);
-
-    // 연금계좌 세액공제 (13.2% ~ 16.5%)
-    const pensionLimit = Math.min(inputs.pension, 9000000);
-    const pensionDeduction = salary <= 55000000 ? pensionLimit * 0.165 : pensionLimit * 0.132;
+    // 총 소득공제
+    const totalIncomeDeduction = personalDeduction + socialInsuranceDeduction + cardDeduction + housingIncomeDeduction;
 
     // 과세표준
-    let taxableIncome = earnedIncome - personalDeduction - cardDeduction - housingDeduction;
+    let taxableIncome = earnedIncome - totalIncomeDeduction;
     taxableIncome = Math.max(0, taxableIncome);
 
-    // 산출세액 (2026년 세율)
+    // ==========================================
+    // 3. 산출세액 (2026년 세율)
+    // ==========================================
     let calculatedTax = 0;
     if (taxableIncome <= 14000000) {
         calculatedTax = taxableIncome * 0.06;
@@ -114,26 +168,164 @@ function calculateTax(inputs: FormInputs) {
         calculatedTax = 384060000 + (taxableIncome - 1000000000) * 0.45;
     }
 
-    // 세액공제 적용
-    const totalTaxCredit = medicalDeduction + educationDeduction + pensionDeduction;
+    // ==========================================
+    // 4. 세액공제 항목
+    // ==========================================
+
+    // 의료비 세액공제 (CALCULATOR_FORMULAS.md 기준)
+    // 문턱금액: 총급여의 3%
+    const medicalThreshold = salary * 0.03;
+    // 총 의료비 (실손보험금 차감)
+    const totalMedical = inputs.infertility + inputs.premature + inputs.selfDisabledSenior + inputs.otherFamily;
+    const netMedical = Math.max(0, totalMedical - inputs.insuranceReimbursement);
+
+    let medicalDeduction = 0;
+    // 문턱금액 초과분에 대해서만 공제
+    const eligibleMedical = Math.max(0, netMedical - medicalThreshold);
+
+    if (eligibleMedical > 0) {
+        // 각 항목별 공제 계산 (문턱금액 초과분 비율로 배분)
+        const ratio = eligibleMedical / netMedical;
+
+        // 난임시술비 30% (한도 없음)
+        medicalDeduction += inputs.infertility * ratio * 0.30;
+        // 미숙아/선천성이상아 20% (한도 없음)
+        medicalDeduction += inputs.premature * ratio * 0.20;
+        // 본인/장애인/65세이상/6세이하 15% (한도 없음)
+        medicalDeduction += inputs.selfDisabledSenior * ratio * 0.15;
+        // 그 밖의 부양가족 15% (700만원 한도)
+        medicalDeduction += Math.min(inputs.otherFamily * ratio, 7000000) * 0.15;
+    }
+
+    // 교육비 세액공제 (15%, 한도별 계산)
+    let educationDeduction = 0;
+    // 본인 교육비: 한도 없음
+    educationDeduction += inputs.selfEducation * 0.15;
+    // 미취학 자녀: 300만원/인 한도 (간소화를 위해 합계로 처리)
+    educationDeduction += Math.min(inputs.preschool, 3000000) * 0.15;
+    // 초중고: 300만원/인 한도
+    educationDeduction += Math.min(inputs.elementary, 3000000) * 0.15;
+    // 대학: 900만원/인 한도
+    educationDeduction += Math.min(inputs.university, 9000000) * 0.15;
+
+    // 주택자금 세액공제 (월세)
+    let housingTaxCredit = 0;
+    // 월세 세액공제: 총급여 5,500만원 이하 17%, 초과 15% (1,000만원 한도)
+    if (inputs.monthlyRent > 0) {
+        const rentRate = salary <= 55000000 ? 0.17 : 0.15;
+        housingTaxCredit = Math.min(inputs.monthlyRent, 10000000) * rentRate;
+    }
+
+    // 연금계좌 세액공제 (CALCULATOR_FORMULAS.md 기준)
+    const pensionRate = salary <= 55000000 ? 0.165 : 0.132;
+    // 연금저축 한도: 600만원
+    const pensionSavingsLimit = Math.min(inputs.pensionSavings, 6000000);
+    // IRP 합산 한도: 900만원
+    const totalPensionLimit = Math.min(pensionSavingsLimit + inputs.irp, 9000000);
+    // ISA 전환금액: 별도 300만원 한도
+    const isaLimit = Math.min(inputs.isaTransfer, 3000000);
+
+    const pensionDeduction = (totalPensionLimit + isaLimit) * pensionRate;
+
+    // 보장성 보험료 세액공제
+    // 일반 보장성 보험: 100만원 한도, 12%
+    const generalInsuranceCredit = Math.min(inputs.generalInsurance, 1000000) * 0.12;
+    // 장애인 전용 보험: 100만원 한도, 15%
+    const disabledInsuranceCredit = Math.min(inputs.disabledInsurance, 1000000) * 0.15;
+    const insuranceDeduction = generalInsuranceCredit + disabledInsuranceCredit;
+
+    // 기부금 세액공제 (CALCULATOR_FORMULAS.md 기준)
+    let donationDeduction = 0;
+
+    // 정치자금: 10만원 이하 100/110, 초과 15%, 3천만원 초과 25%
+    if (inputs.politicalDonation > 0) {
+        const politicalBase = Math.min(inputs.politicalDonation, 100000) * (100 / 110);
+        const politicalExcess = Math.max(0, inputs.politicalDonation - 100000);
+        const politicalExcess15 = Math.min(politicalExcess, 30000000);
+        const politicalExcess25 = Math.max(0, politicalExcess - 30000000);
+        donationDeduction += politicalBase + politicalExcess15 * 0.15 + politicalExcess25 * 0.25;
+    }
+
+    // 고향사랑: 합산 2천만원 한도, 10만원 이하 100/110, 초과 15%
+    if (inputs.hometownDonation > 0) {
+        const hometownLimited = Math.min(inputs.hometownDonation, 20000000);
+        const hometownBase = Math.min(hometownLimited, 100000) * (100 / 110);
+        const hometownExcess = Math.max(0, hometownLimited - 100000) * 0.15;
+        donationDeduction += hometownBase + hometownExcess;
+    }
+
+    // 고향사랑 특별재난: 10만원 이하 100/110, 초과 30%
+    if (inputs.hometownDisaster > 0) {
+        const hometownLimited = Math.min(inputs.hometownDonation, 20000000);
+        const disasterLimited = Math.min(inputs.hometownDisaster, Math.max(0, 20000000 - hometownLimited));
+        const disasterBase = Math.min(disasterLimited, 100000) * (100 / 110);
+        const disasterExcess = Math.max(0, disasterLimited - 100000) * 0.30;
+        donationDeduction += disasterBase + disasterExcess;
+    }
+
+    // 특례기부금: 1천만원 이하 15%, 초과 30%
+    if (inputs.specialDonation > 0) {
+        const special15 = Math.min(inputs.specialDonation, 10000000) * 0.15;
+        const special30 = Math.max(0, inputs.specialDonation - 10000000) * 0.30;
+        donationDeduction += special15 + special30;
+    }
+
+    // 우리사주조합: 소득 30% 한도
+    if (inputs.employeeDonation > 0) {
+        const employeeLimited = Math.min(inputs.employeeDonation, earnedIncome * 0.30);
+        const employee15 = Math.min(employeeLimited, 10000000) * 0.15;
+        const employee30 = Math.max(0, employeeLimited - 10000000) * 0.30;
+        donationDeduction += employee15 + employee30;
+    }
+
+    // 일반기부금 (종교단체 외): 소득 30% 한도
+    if (inputs.designatedDonation > 0) {
+        const designatedLimited = Math.min(inputs.designatedDonation, earnedIncome * 0.30);
+        const designated15 = Math.min(designatedLimited, 10000000) * 0.15;
+        const designated30 = Math.max(0, designatedLimited - 10000000) * 0.30;
+        donationDeduction += designated15 + designated30;
+    }
+
+    // 종교단체: 소득 10% 한도
+    if (inputs.religiousDonation > 0) {
+        const religiousLimited = Math.min(inputs.religiousDonation, earnedIncome * 0.10);
+        const religious15 = Math.min(religiousLimited, 10000000) * 0.15;
+        const religious30 = Math.max(0, religiousLimited - 10000000) * 0.30;
+        donationDeduction += religious15 + religious30;
+    }
+
+    // 총 세액공제
+    const totalTaxCredit =
+        medicalDeduction +
+        educationDeduction +
+        housingTaxCredit +
+        pensionDeduction +
+        insuranceDeduction +
+        donationDeduction;
+
+    // 결정세액
     const finalTax = Math.max(0, calculatedTax - totalTaxCredit);
 
-    // 기납부세액 (원천징수 - 간략화: 월급의 약 3.3% × 12개월)
-    const withheldTax = Math.round(salary * 0.033);
+    // 기납부세액 (사용자 입력값 사용)
+    const withheldTax = inputs.withheldTax;
 
     // 환급액 또는 추가납부액
     const refund = withheldTax - finalTax;
 
     return {
-        earnedIncome,
-        incomeDeduction,
-        personalDeduction,
-        cardDeduction,
+        salary: Math.round(salary),
+        earnedIncome: Math.round(earnedIncome),
+        incomeDeduction: Math.round(incomeDeduction),
+        totalIncomeDeduction: Math.round(totalIncomeDeduction),
+        personalDeduction: Math.round(personalDeduction),
+        cardDeduction: Math.round(cardDeduction),
         medicalDeduction: Math.round(medicalDeduction),
         educationDeduction: Math.round(educationDeduction),
-        housingDeduction,
-        pensionDeduction: Math.round(pensionDeduction),
-        taxableIncome,
+        housingDeduction: Math.round(housingIncomeDeduction + housingTaxCredit),
+        pensionDeduction: Math.round(pensionDeduction + insuranceDeduction),
+        donationDeduction: Math.round(donationDeduction),
+        socialInsuranceDeduction: Math.round(socialInsuranceDeduction),
+        taxableIncome: Math.round(taxableIncome),
         calculatedTax: Math.round(calculatedTax),
         totalTaxCredit: Math.round(totalTaxCredit),
         finalTax: Math.round(finalTax),
@@ -205,14 +397,18 @@ interface FormInputs {
 }
 
 interface TaxResult {
+    salary: number;
     earnedIncome: number;
     incomeDeduction: number;
+    totalIncomeDeduction: number;
     personalDeduction: number;
     cardDeduction: number;
     medicalDeduction: number;
     educationDeduction: number;
     housingDeduction: number;
     pensionDeduction: number;
+    donationDeduction: number;
+    socialInsuranceDeduction: number;
     taxableIncome: number;
     calculatedTax: number;
     totalTaxCredit: number;
@@ -2162,12 +2358,13 @@ export default function CalculatorPage() {
             {/* Floating Result Panel */}
             <div className="lg:col-span-1">
                 <div className="sticky top-24">
+                    {/* 예상 환급액 - 9번 결과 */}
                     <div className="neo-card bg-neo-black text-white mb-4">
                         <h3 className="text-lg font-bold text-gray-400 mb-1">
-                            예상 환급액
+                            ⑨ 예상 환급액
                         </h3>
                         <div className={clsx(
-                            "text-4xl font-black mb-4",
+                            "text-4xl font-black mb-2",
                             result ? (result.refund >= 0 ? "text-neo-cyan" : "text-red-400") : "text-gray-500"
                         )}>
                             {result
@@ -2175,65 +2372,128 @@ export default function CalculatorPage() {
                                 : "계산을 시작하세요"
                             }
                         </div>
-
                         {result && (
-                            <div className="space-y-2 text-sm border-t border-gray-700 pt-4">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-400">과세표준</span>
-                                    <span>{formatNumber(result.taxableIncome)}원</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-400">산출세액</span>
-                                    <span>{formatNumber(result.calculatedTax)}원</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-400">세액공제 합계</span>
-                                    <span className="text-neo-yellow">-{formatNumber(result.totalTaxCredit)}원</span>
-                                </div>
-                                <div className="flex justify-between border-t border-gray-700 pt-2">
-                                    <span>결정세액</span>
-                                    <span className="font-bold">{formatNumber(result.finalTax)}원</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>기납부세액</span>
-                                    <span className="font-bold">{formatNumber(result.withheldTax)}원</span>
-                                </div>
-                            </div>
+                            <p className="text-xs text-gray-500">
+                                결정세액 - 기납부세액 = {formatNumber(result.finalTax)} - {formatNumber(result.withheldTax)}
+                            </p>
                         )}
                     </div>
 
+                    {/* 계산 플로우 1~8 */}
                     {result && (
                         <div className="neo-card bg-white mb-4 text-sm">
-                            <h4 className="font-bold mb-3">공제 내역</h4>
-                            <div className="space-y-2 text-gray-600">
-                                <div className="flex justify-between">
-                                    <span>근로소득공제</span>
-                                    <span>{formatNumber(result.incomeDeduction)}원</span>
+                            <h4 className="font-bold mb-3 border-b-2 border-black pb-2">📋 계산 플로우</h4>
+                            <div className="space-y-3">
+                                {/* 1. 총급여액 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">① 총급여액</span>
+                                    <span className="font-bold">{formatNumber(result.salary)}원</span>
                                 </div>
+
+                                {/* 2. 근로소득공제 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">② 근로소득공제</span>
+                                    <span className="font-bold text-blue-600">-{formatNumber(result.incomeDeduction)}원</span>
+                                </div>
+
+                                {/* 3. 근로소득금액 */}
+                                <div className="flex justify-between items-center bg-neo-yellow/30 p-2 -mx-2 border-y border-black">
+                                    <span className="font-semibold">③ 근로소득금액</span>
+                                    <span className="font-bold">{formatNumber(result.earnedIncome)}원</span>
+                                </div>
+
+                                {/* 4. 소득공제 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">④ 소득공제 합계</span>
+                                    <span className="font-bold text-blue-600">-{formatNumber(result.totalIncomeDeduction)}원</span>
+                                </div>
+
+                                {/* 5. 과세표준 */}
+                                <div className="flex justify-between items-center bg-neo-yellow/30 p-2 -mx-2 border-y border-black">
+                                    <span className="font-semibold">⑤ 과세표준</span>
+                                    <span className="font-bold">{formatNumber(result.taxableIncome)}원</span>
+                                </div>
+
+                                {/* 6. 산출세액 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">⑥ 산출세액</span>
+                                    <span className="font-bold">{formatNumber(result.calculatedTax)}원</span>
+                                </div>
+
+                                {/* 7. 세액공제 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">⑦ 세액공제 합계</span>
+                                    <span className="font-bold text-green-600">-{formatNumber(result.totalTaxCredit)}원</span>
+                                </div>
+
+                                {/* 8. 결정세액 */}
+                                <div className="flex justify-between items-center bg-neo-yellow/30 p-2 -mx-2 border-y border-black">
+                                    <span className="font-semibold">⑧ 결정세액</span>
+                                    <span className="font-bold">{formatNumber(result.finalTax)}원</span>
+                                </div>
+
+                                {/* 기납부세액 */}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">기납부세액</span>
+                                    <span className="font-bold">{formatNumber(result.withheldTax)}원</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 공제 내역 상세 */}
+                    {result && (
+                        <div className="neo-card bg-white mb-4 text-sm">
+                            <h4 className="font-bold mb-3 border-b-2 border-black pb-2">📊 공제 내역 상세</h4>
+                            <div className="space-y-2 text-gray-600">
+                                <p className="font-bold text-sm text-black border-b border-black pb-1">소득공제 (④)</p>
                                 <div className="flex justify-between">
                                     <span>인적공제</span>
                                     <span>{formatNumber(result.personalDeduction)}원</span>
                                 </div>
-                                <div className="flex justify-between">
-                                    <span>신용카드 공제</span>
-                                    <span>{formatNumber(result.cardDeduction)}원</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>의료비 세액공제</span>
-                                    <span>{formatNumber(result.medicalDeduction)}원</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>교육비 세액공제</span>
-                                    <span>{formatNumber(result.educationDeduction)}원</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>주택자금 공제</span>
-                                    <span>{formatNumber(result.housingDeduction)}원</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span>연금계좌 세액공제</span>
-                                    <span>{formatNumber(result.pensionDeduction)}원</span>
-                                </div>
+                                {result.socialInsuranceDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>4대보험</span>
+                                        <span>{formatNumber(result.socialInsuranceDeduction)}원</span>
+                                    </div>
+                                )}
+                                {result.cardDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>신용카드 등</span>
+                                        <span>{formatNumber(result.cardDeduction)}원</span>
+                                    </div>
+                                )}
+                                {result.housingDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>주택자금</span>
+                                        <span>{formatNumber(result.housingDeduction)}원</span>
+                                    </div>
+                                )}
+                                <p className="font-bold text-sm text-black border-b border-black pb-1 pt-2">세액공제 (⑦)</p>
+                                {result.medicalDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>의료비</span>
+                                        <span>{formatNumber(result.medicalDeduction)}원</span>
+                                    </div>
+                                )}
+                                {result.educationDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>교육비</span>
+                                        <span>{formatNumber(result.educationDeduction)}원</span>
+                                    </div>
+                                )}
+                                {result.pensionDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>연금·보험료</span>
+                                        <span>{formatNumber(result.pensionDeduction)}원</span>
+                                    </div>
+                                )}
+                                {result.donationDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>기부금</span>
+                                        <span>{formatNumber(result.donationDeduction)}원</span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

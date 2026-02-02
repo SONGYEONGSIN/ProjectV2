@@ -25,7 +25,8 @@ interface MonthlySalaryData {
     healthInsurance: string;       // 건강보험
     longTermCare: string;          // 노인장기요양보험
     employmentInsurance: string;   // 고용보험
-    prepaidTax: string;            // 기납부세액
+    prepaidTax: string;            // 기납부세액 (소득세)
+    localIncomeTax: string;        // 기납부세액 (지방소득세)
 }
 
 interface Notification {
@@ -52,6 +53,7 @@ export default function AdminPage() {
             longTermCare: "0",
             employmentInsurance: "0",
             prepaidTax: "0",
+            localIncomeTax: "0",
         };
         const initial: { [month: number]: MonthlySalaryData } = {};
         for (let m = 1; m <= 12; m++) {
@@ -86,6 +88,8 @@ export default function AdminPage() {
         spouse: false,
         children: 0,
         childrenUnder6: 0,       // 6세 이하 자녀 수 (보육수당)
+        childrenOver8: 0,        // 8세 이상 자녀 수 (자녀세액공제)
+        birthAdoption: "none" as "none" | "first" | "second" | "third1" | "third2" | "third3",  // 출생·입양자
         parents: 0,
         siblings: 0,
         foster: 0,               // 위탁아동
@@ -123,6 +127,7 @@ export default function AdminPage() {
                     longTermCare: savedData.salary.longTermCare?.toLocaleString("ko-KR") || "0",
                     employmentInsurance: savedData.salary.employmentInsurance?.toLocaleString("ko-KR") || "0",
                     prepaidTax: savedData.salary.prepaidTax?.toLocaleString("ko-KR") || "0",
+                    localIncomeTax: savedData.salary.localIncomeTax?.toLocaleString("ko-KR") || "0",
                 };
                 const monthlyInit: { [month: number]: MonthlySalaryData } = {};
                 for (let m = 1; m <= 12; m++) {
@@ -161,6 +166,8 @@ export default function AdminPage() {
                     spouse: savedData.family.spouse || false,
                     children: savedData.family.children || 0,
                     childrenUnder6: savedData.family.childrenUnder6 || savedData.salary.childrenUnder6 || 0,
+                    childrenOver8: savedData.family.childrenOver8 || 0,
+                    birthAdoption: savedData.family.birthAdoption || "none",
                     parents: savedData.family.parents || 0,
                     siblings: savedData.family.siblings || 0,
                     foster: savedData.family.foster || 0,
@@ -180,6 +187,7 @@ export default function AdminPage() {
                 longTermCare: "0",
                 employmentInsurance: "0",
                 prepaidTax: "0",
+                localIncomeTax: "0",
             };
             const initial: { [month: number]: MonthlySalaryData } = {};
             for (let m = 1; m <= 12; m++) {
@@ -191,6 +199,8 @@ export default function AdminPage() {
                 spouse: false,
                 children: 0,
                 childrenUnder6: 0,
+                childrenOver8: 0,
+                birthAdoption: "none",
                 parents: 0,
                 siblings: 0,
                 foster: 0,
@@ -256,6 +266,8 @@ export default function AdminPage() {
                 spouse: familyData.spouse,
                 children: familyData.children,
                 childrenUnder6: familyData.childrenUnder6,
+                childrenOver8: familyData.childrenOver8,
+                birthAdoption: familyData.birthAdoption,
                 parents: familyData.parents,
                 siblings: familyData.siblings,
                 foster: familyData.foster,
@@ -723,12 +735,21 @@ export default function AdminPage() {
                             />
                         </div>
                         <div>
-                            <label className="block font-bold mb-2">소득세 (기납부세액)</label>
+                            <label className="block font-bold mb-2">기납부세액 (소득세)</label>
                             <input
                                 type="text"
                                 className="neo-input"
                                 value={monthlySalary[selectedMonth]?.prepaidTax || "0"}
                                 onChange={(e) => handleSalaryInputChange("prepaidTax", e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block font-bold mb-2">기납부세액 (지방소득세)</label>
+                            <input
+                                type="text"
+                                className="neo-input"
+                                value={monthlySalary[selectedMonth]?.localIncomeTax || "0"}
+                                onChange={(e) => handleSalaryInputChange("localIncomeTax", e.target.value)}
                             />
                         </div>
                     </div>
@@ -748,89 +769,133 @@ export default function AdminPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block font-bold mb-2">배우자공제</label>
-                            <div className="flex gap-2">
-                                {[false, true].map((hasSpouse) => (
-                                    <button
-                                        key={hasSpouse ? "yes" : "no"}
-                                        onClick={() => setFamilyData(prev => ({ ...prev, spouse: hasSpouse }))}
-                                        className={clsx(
-                                            "flex-1 p-3 border-[3px] border-black font-semibold text-lg transition-colors",
-                                            familyData.spouse === hasSpouse ? "bg-black text-white" : "bg-white hover:bg-gray-100"
-                                        )}
-                                    >
-                                        {hasSpouse ? "있음" : "없음"}
-                                    </button>
-                                ))}
+                    {/* 기본공제 섹션 */}
+                    <div className="mb-6">
+                        <h4 className="text-base font-black mb-3 px-2 py-1 bg-neo-cyan border-2 border-black inline-block">기본공제</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block font-bold mb-2">배우자공제</label>
+                                <div className="flex gap-2">
+                                    {[false, true].map((hasSpouse) => (
+                                        <button
+                                            key={hasSpouse ? "yes" : "no"}
+                                            onClick={() => setFamilyData(prev => ({ ...prev, spouse: hasSpouse }))}
+                                            className={clsx(
+                                                "flex-1 p-3 border-[3px] border-black font-semibold text-lg transition-colors",
+                                                familyData.spouse === hasSpouse ? "bg-black text-white" : "bg-white hover:bg-gray-100"
+                                            )}
+                                        >
+                                            {hasSpouse ? "있음" : "없음"}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2">만 20세 이하 자녀 수</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.children}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, children: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2">직계존속 (만 60세 이상)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.parents}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, parents: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2">형제자매</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.siblings}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, siblings: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2">위탁아동 (6개월 이상)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.foster}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, foster: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2">기초생활수급자</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.recipient}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, recipient: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
                             </div>
                         </div>
-                        <div>
-                            <label className="block font-bold mb-2">자녀 (만 20세 이하)</label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="10"
-                                className="neo-input"
-                                value={familyData.children}
-                                onChange={(e) => setFamilyData(prev => ({ ...prev, children: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
+                    </div>
+
+                    {/* 세액공제 섹션 */}
+                    <div className="mb-6">
+                        <h4 className="text-base font-black mb-3 px-2 py-1 bg-neo-yellow border-2 border-black inline-block">세액공제</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block font-bold mb-2">만 8세 이상 자녀 수</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.childrenOver8}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, childrenOver8: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2">출생·입양자</label>
+                                <select
+                                    className="neo-input"
+                                    value={familyData.birthAdoption}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, birthAdoption: e.target.value as "none" | "first" | "second" | "third1" | "third2" | "third3" }))}
+                                >
+                                    <option value="none">선택 안함</option>
+                                    <option value="first">첫째</option>
+                                    <option value="second">둘째</option>
+                                    <option value="third1">셋째 이상 (1명)</option>
+                                    <option value="third2">셋째 이상 (2명)</option>
+                                    <option value="third3">셋째 이상 (3명)</option>
+                                </select>
+                            </div>
                         </div>
-                        <div>
-                            <label className="block font-bold mb-2">만 6세 이하 자녀 수</label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="10"
-                                className="neo-input"
-                                value={familyData.childrenUnder6}
-                                onChange={(e) => setFamilyData(prev => ({ ...prev, childrenUnder6: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
-                        </div>
-                        <div>
-                            <label className="block font-bold mb-2">직계존속 (만 60세 이상)</label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="10"
-                                className="neo-input"
-                                value={familyData.parents}
-                                onChange={(e) => setFamilyData(prev => ({ ...prev, parents: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
-                        </div>
-                        <div>
-                            <label className="block font-bold mb-2">형제자매</label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="10"
-                                className="neo-input"
-                                value={familyData.siblings}
-                                onChange={(e) => setFamilyData(prev => ({ ...prev, siblings: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
-                        </div>
-                        <div>
-                            <label className="block font-bold mb-2">위탁아동 (6개월 이상)</label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="10"
-                                className="neo-input"
-                                value={familyData.foster}
-                                onChange={(e) => setFamilyData(prev => ({ ...prev, foster: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
-                        </div>
-                        <div>
-                            <label className="block font-bold mb-2">기초생활수급자</label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="10"
-                                className="neo-input"
-                                value={familyData.recipient}
-                                onChange={(e) => setFamilyData(prev => ({ ...prev, recipient: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
+                    </div>
+
+                    {/* 비과세 섹션 */}
+                    <div>
+                        <h4 className="text-base font-black mb-3 px-2 py-1 bg-neo-pink border-2 border-black inline-block">비과세</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block font-bold mb-2">만 6세 이하 자녀 수 (보육수당)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.childrenUnder6}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, childrenUnder6: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>

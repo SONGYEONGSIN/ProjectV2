@@ -16,6 +16,7 @@ import {
     Shield,
     Users,
     Wallet,
+    Baby,
     Download,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -71,62 +72,69 @@ function calculateTax(inputs: FormInputs) {
         inputs.longTermCare +
         inputs.employmentInsurance;
 
-    // 신용카드 등 소득공제 (CALCULATOR_FORMULAS.md 기준)
-    const minCardSpending = salary * 0.25; // 최소 사용금액 (총급여의 25%)
-    const totalCardSpending =
-        inputs.creditCard +
-        inputs.debitCard +
-        inputs.cash +
-        inputs.traditionalMarket +
-        inputs.publicTransport +
-        inputs.culture;
+    // 신용카드 등 소득공제 (UI와 동일한 로직)
+    const threshold = salary * 0.25; // 최소 사용금액 (총급여의 25%)
 
     let cardDeduction = 0;
-    if (totalCardSpending > minCardSpending) {
-        let remaining = totalCardSpending - minCardSpending;
 
-        // 사용유형별 공제 계산 (순서: 신용카드 → 체크카드 → 현금영수증 → 전통시장 → 대중교통 → 문화체육)
-        // 신용카드 15%
-        const creditExcess = Math.min(inputs.creditCard, remaining);
-        cardDeduction += creditExcess * 0.15;
-        remaining -= creditExcess;
+    // 순차적으로 25% 소진: 신용카드 → 직불카드 → 현금영수증 → 대중교통 → 전통시장 → 문화체육
+    let cardRemaining = threshold;
 
-        // 체크카드 30%
-        const debitExcess = Math.min(inputs.debitCard, remaining);
-        cardDeduction += debitExcess * 0.30;
-        remaining -= debitExcess;
+    // 1. 신용카드
+    const creditExcess = Math.max(0, inputs.creditCard - cardRemaining);
+    cardRemaining = Math.max(0, cardRemaining - inputs.creditCard);
 
-        // 현금영수증 30%
-        const cashExcess = Math.min(inputs.cash, remaining);
-        cardDeduction += cashExcess * 0.30;
-        remaining -= cashExcess;
+    // 2. 체크카드
+    const debitExcess = Math.max(0, inputs.debitCard - cardRemaining);
+    cardRemaining = Math.max(0, cardRemaining - inputs.debitCard);
 
-        // 추가 공제 (기본한도와 별개)
-        // 전통시장 40%
-        const traditionalMarketDeduction = inputs.traditionalMarket * 0.40;
-        // 대중교통 80%
-        const publicTransportDeduction = inputs.publicTransport * 0.80;
-        // 문화체육 30%
-        const cultureDeduction = inputs.culture * 0.30;
+    // 3. 현금영수증
+    const cashExcess = Math.max(0, inputs.cash - cardRemaining);
+    cardRemaining = Math.max(0, cardRemaining - inputs.cash);
 
-        // 기본한도: 총급여에 따라 200~300만원
-        let baseLimit = 3000000;
-        if (salary > 120000000) {
-            baseLimit = 2000000;
-        } else if (salary > 70000000) {
-            baseLimit = 2500000;
-        }
+    // 4. 대중교통
+    const transportExcess = Math.max(0, inputs.publicTransport - cardRemaining);
+    cardRemaining = Math.max(0, cardRemaining - inputs.publicTransport);
 
-        // 기본 공제액 한도 적용
-        cardDeduction = Math.min(cardDeduction, baseLimit);
+    // 5. 전통시장
+    const marketExcess = Math.max(0, inputs.traditionalMarket - cardRemaining);
+    cardRemaining = Math.max(0, cardRemaining - inputs.traditionalMarket);
 
-        // 추가한도: 전통시장 100만원, 대중교통 100만원, 문화체육 100만원
-        cardDeduction += Math.min(traditionalMarketDeduction, 1000000);
-        cardDeduction += Math.min(publicTransportDeduction, 1000000);
-        if (salary <= 70000000) { // 문화체육은 총급여 7천만원 이하만
-            cardDeduction += Math.min(cultureDeduction, 1000000);
-        }
+    // 6. 문화체육
+    const cultureExcess = Math.max(0, inputs.culture - cardRemaining);
+
+    // 기본 공제 (신용카드, 체크카드, 현금영수증) - 초과분에만 공제율 적용
+    const creditDeduction = Math.round(creditExcess * 0.15);
+    const debitDeduction = Math.round(debitExcess * 0.30);
+    const cashDeduction = Math.round(cashExcess * 0.30);
+    const basicDeduction = creditDeduction + debitDeduction + cashDeduction;
+
+    // 기본 공제 한도: 총급여에 따라 200~300만원 + 자녀 추가한도
+    let baseLimit = 3000000;
+    if (salary > 120000000) {
+        baseLimit = 2000000;
+    } else if (salary > 70000000) {
+        baseLimit = 2500000;
     }
+    baseLimit += Math.min((inputs.cardChildren || 0) * 500000, 1000000);
+    const finalBasic = Math.min(basicDeduction, baseLimit);
+
+    // 추가 공제 (대중교통, 전통시장, 문화체육) - 초과분에만 공제율 적용
+    const transportDeduction = Math.round(transportExcess * 0.40);
+    const marketDeduction = Math.round(marketExcess * 0.40);
+    const cultureDeductionVal = salary <= 70000000 ? Math.round(cultureExcess * 0.30) : 0;
+    const additionalDeduction = transportDeduction + marketDeduction + cultureDeductionVal;
+
+    // 추가 공제 한도: 총급여에 따라 200~300만원
+    let additionalLimit = 3000000;
+    if (salary > 120000000) {
+        additionalLimit = 2000000;
+    } else if (salary > 70000000) {
+        additionalLimit = 2500000;
+    }
+    const finalAdditional = Math.min(additionalDeduction, additionalLimit);
+
+    cardDeduction = finalBasic + finalAdditional;
 
     // 주택자금 소득공제
     let housingIncomeDeduction = 0;
@@ -216,16 +224,16 @@ function calculateTax(inputs: FormInputs) {
         housingTaxCredit = Math.min(inputs.monthlyRent, 10000000) * rentRate;
     }
 
-    // 연금계좌 세액공제 (CALCULATOR_FORMULAS.md 기준)
-    const pensionRate = salary <= 55000000 ? 0.165 : 0.132;
+    // 연금계좌 세액공제 (UI와 동일한 로직 - 12% 고정)
+    const pensionRate = 0.12; // 12% (지방세 제외)
     // 연금저축 한도: 600만원
     const pensionSavingsLimit = Math.min(inputs.pensionSavings, 6000000);
-    // IRP 합산 한도: 900만원
-    const totalPensionLimit = Math.min(pensionSavingsLimit + inputs.irp, 9000000);
-    // ISA 전환금액: 별도 300만원 한도
-    const isaLimit = Math.min(inputs.isaTransfer, 3000000);
+    // IRP 합산 한도: 900만원 (연금저축 포함)
+    const irpLimit = Math.min(inputs.irp, 9000000 - pensionSavingsLimit);
+    // ISA 전환금액: 10%만 공제 대상, 300만원 한도
+    const isaLimit = Math.min((inputs.isaTransfer || 0) * 0.1, 3000000);
 
-    const pensionDeduction = (totalPensionLimit + isaLimit) * pensionRate;
+    const pensionDeduction = (pensionSavingsLimit + irpLimit + isaLimit) * pensionRate;
 
     // 보장성 보험료 세액공제
     // 일반 보장성 보험: 100만원 한도, 12%
@@ -294,14 +302,74 @@ function calculateTax(inputs: FormInputs) {
         donationDeduction += religious15 + religious30;
     }
 
+    // ==========================================
+    // 5. 자녀 세액공제 (CALCULATOR_FORMULAS.md 기준)
+    // ==========================================
+    let childTaxCredit = 0;
+
+    // 기본공제 대상 자녀 (만 8세 이상)
+    // 1명: 25만원, 2명: 55만원, 3명 이상: 55만원 + 2명 초과 1명당 40만원
+    const childrenOver8 = inputs.childrenOver8 || 0;
+    if (childrenOver8 === 1) {
+        childTaxCredit += 250000;
+    } else if (childrenOver8 === 2) {
+        childTaxCredit += 550000;
+    } else if (childrenOver8 >= 3) {
+        childTaxCredit += 550000 + (childrenOver8 - 2) * 400000;
+    }
+
+    // 출생·입양 공제 (첫째 30만원, 둘째 50만원, 셋째 이상 70만원)
+    const birthAdoption = inputs.birthAdoption || "none";
+    if (birthAdoption === "first") {
+        childTaxCredit += 300000;
+    } else if (birthAdoption === "second") {
+        childTaxCredit += 500000;
+    } else if (birthAdoption === "third1") {
+        childTaxCredit += 700000;
+    } else if (birthAdoption === "third2") {
+        childTaxCredit += 1400000; // 셋째 이상 2명
+    } else if (birthAdoption === "third3") {
+        childTaxCredit += 2100000; // 셋째 이상 3명
+    }
+
+    // ==========================================
+    // 6. 근로소득세액공제
+    // ==========================================
+    // 산출세액 130만원 이하: 산출세액 × 55%
+    // 산출세액 130만원 초과: 715,000원 + (산출세액 - 130만원) × 30%
+    let earnedIncomeTaxCredit = 0;
+    if (calculatedTax <= 1300000) {
+        earnedIncomeTaxCredit = calculatedTax * 0.55;
+    } else {
+        earnedIncomeTaxCredit = 715000 + (calculatedTax - 1300000) * 0.30;
+    }
+    // 한도 적용
+    // 3,300만원 이하: 74만원
+    // 3,300만원 초과 7,000만원 이하: 74만원 - (초과분 × 0.008) → 최소 66만원
+    // 7,000만원 초과 1억2천만원 이하: 66만원 - (초과분 × 1/2) → 최소 50만원
+    // 1억2천만원 초과: 50만원 - (초과분 × 1/2) → 최소 20만원
+    let earnedIncomeTaxCreditLimit = 0;
+    if (salary <= 33000000) {
+        earnedIncomeTaxCreditLimit = 740000;
+    } else if (salary <= 70000000) {
+        earnedIncomeTaxCreditLimit = Math.max(660000, 740000 - (salary - 33000000) * 0.008);
+    } else if (salary <= 120000000) {
+        earnedIncomeTaxCreditLimit = Math.max(500000, 660000 - (salary - 70000000) * 0.5);
+    } else {
+        earnedIncomeTaxCreditLimit = Math.max(200000, 500000 - (salary - 120000000) * 0.5);
+    }
+    earnedIncomeTaxCredit = Math.min(earnedIncomeTaxCredit, earnedIncomeTaxCreditLimit);
+
     // 총 세액공제
     const totalTaxCredit =
+        earnedIncomeTaxCredit +
         medicalDeduction +
         educationDeduction +
         housingTaxCredit +
         pensionDeduction +
         insuranceDeduction +
-        donationDeduction;
+        donationDeduction +
+        childTaxCredit;
 
     // 결정세액
     const finalTax = Math.max(0, calculatedTax - totalTaxCredit);
@@ -325,6 +393,9 @@ function calculateTax(inputs: FormInputs) {
         pensionDeduction: Math.round(pensionDeduction + insuranceDeduction),
         donationDeduction: Math.round(donationDeduction),
         socialInsuranceDeduction: Math.round(socialInsuranceDeduction),
+        childTaxCredit: Math.round(childTaxCredit),
+        earnedIncomeTaxCredit: Math.round(earnedIncomeTaxCredit),
+        insuranceDeduction: Math.round(insuranceDeduction),
         taxableIncome: Math.round(taxableIncome),
         calculatedTax: Math.round(calculatedTax),
         totalTaxCredit: Math.round(totalTaxCredit),
@@ -339,7 +410,8 @@ interface FormInputs {
     mealAllowance: number;       // 비과세(식대) - 연간
     childrenUnder6: number;      // 6세 이하 자녀 수 (보육수당용)
     salary: number;              // 총급여액 (자동 계산)
-    withheldTax: number;         // 기납부세액 (원천징수세액)
+    withheldTax: number;         // 기납부세액 (소득세)
+    localIncomeTax: number;      // 기납부세액 (지방소득세)
     // 인적공제 상세
     spouse: number;              // 배우자 (0 또는 1)
     parents: number;             // 직계존속 (만60세 이상)
@@ -394,6 +466,9 @@ interface FormInputs {
     employeeDonation: number;    // 우리사주조합 기부금
     designatedDonation: number;  // 일반 기부금 (종교단체 외)
     religiousDonation: number;   // 종교단체 기부금
+    // 자녀공제 (세액공제)
+    childrenOver8: number;       // 만 8세 이상 자녀 수 (자녀세액공제)
+    birthAdoption: "none" | "first" | "second" | "third1" | "third2" | "third3";  // 출생·입양자
 }
 
 interface TaxResult {
@@ -409,6 +484,9 @@ interface TaxResult {
     pensionDeduction: number;
     donationDeduction: number;
     socialInsuranceDeduction: number;
+    childTaxCredit: number;          // 자녀 세액공제
+    earnedIncomeTaxCredit: number;   // 근로소득세액공제
+    insuranceDeduction: number;      // 보험료 세액공제
     taxableIncome: number;
     calculatedTax: number;
     totalTaxCredit: number;
@@ -473,6 +551,12 @@ export default function CalculatorPage() {
             icon: HeartPulse,
             color: "bg-neo-orange",
         },
+        {
+            id: "childTaxCredit",
+            label: "자녀공제",
+            icon: Baby,
+            color: "bg-neo-pink",
+        },
     ];
 
     const [openSection, setOpenSection] = useState<string | null>("salary");
@@ -481,7 +565,8 @@ export default function CalculatorPage() {
         mealAllowance: 2400000,      // 비과세(식대) - 연간 (월 20만원 x 12)
         childrenUnder6: 1,           // 6세 이하 자녀 수
         salary: 56822780,            // 총급여액 (자동 계산됨)
-        withheldTax: 1267560,        // 기납부세액 (원천징수세액)
+        withheldTax: 1267560,        // 기납부세액 (소득세)
+        localIncomeTax: 126756,      // 기납부세액 (지방소득세)
         // 인적공제 상세
         spouse: 0,                   // 배우자 (0 또는 1)
         parents: 0,                  // 직계존속 (만60세 이상)
@@ -536,6 +621,9 @@ export default function CalculatorPage() {
         employeeDonation: 0,         // 우리사주조합 기부금
         designatedDonation: 0,       // 일반 기부금 (종교단체 외)
         religiousDonation: 0,        // 종교단체 기부금
+        // 자녀공제 (세액공제)
+        childrenOver8: 0,            // 만 8세 이상 자녀 수
+        birthAdoption: "none" as const,  // 출생·입양자
     });
     const [result, setResult] = useState<TaxResult | null>(null);
     const [isCalculating, setIsCalculating] = useState(false);
@@ -633,7 +721,11 @@ export default function CalculatorPage() {
     const handleLoadData = () => {
         setIsLoadingData(true);
 
-        const adminData = loadAdminData(2025); // 현재 연도 기본값
+        const adminData = loadAdminData(2026); // 2026년 기준
+        console.log("[DEBUG] Admin data loaded:", adminData);
+        console.log("[DEBUG] Family data:", adminData?.family);
+        console.log("[DEBUG] childrenOver8:", adminData?.family?.childrenOver8);
+        console.log("[DEBUG] birthAdoption:", adminData?.family?.birthAdoption);
         if (adminData) {
             // Admin 데이터를 Calculator inputs에 매핑
             setInputs(prev => ({
@@ -663,6 +755,9 @@ export default function CalculatorPage() {
                 foster: adminData.family?.foster || 0,
                 recipient: adminData.family?.recipient || 0,
                 cardChildren: adminData.family?.children || 0,  // 카드공제 한도 확대용
+                // 자녀공제 (세액공제)
+                childrenOver8: adminData.family?.childrenOver8 || 0,
+                birthAdoption: adminData.family?.birthAdoption || "none",
             }));
             setTimeout(() => setIsLoadingData(false), 300);
         } else {
@@ -682,6 +777,7 @@ export default function CalculatorPage() {
             childrenUnder6: 0,
             salary: 0,
             withheldTax: 0,
+            localIncomeTax: 0,
             spouse: 0,
             parents: 0,
             children: 0,
@@ -729,6 +825,8 @@ export default function CalculatorPage() {
             employeeDonation: 0,
             designatedDonation: 0,
             religiousDonation: 0,
+            childrenOver8: 0,
+            birthAdoption: "none" as const,
         });
         setResult(null);
         setTimeout(() => setIsResetting(false), 300);
@@ -871,7 +969,7 @@ export default function CalculatorPage() {
                                                     <h4 className="font-black text-sm border-b-2 border-black pb-2">💳 기납부세액</h4>
                                                     <div className="space-y-2">
                                                         <label className="font-bold flex items-center gap-2">
-                                                            기납부세액 (원천징수세액) (원)
+                                                            기납부세액 (소득세) (원)
                                                             <Tooltip content="근로소득 원천징수영수증의 '결정세액' 또는 매월 급여명세서의 소득세 합계">
                                                                 <Info size={14} className="text-gray-400 cursor-help" />
                                                             </Tooltip>
@@ -881,6 +979,20 @@ export default function CalculatorPage() {
                                                             className="neo-input"
                                                             value={formatNumber(inputs.withheldTax)}
                                                             onChange={(e) => handleInputChange("withheldTax", e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="font-bold flex items-center gap-2">
+                                                            기납부세액 (지방소득세) (원)
+                                                            <Tooltip content="매월 급여명세서의 지방소득세 합계 (소득세의 10%)">
+                                                                <Info size={14} className="text-gray-400 cursor-help" />
+                                                            </Tooltip>
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            className="neo-input"
+                                                            value={formatNumber(inputs.localIncomeTax || 0)}
+                                                            onChange={(e) => handleInputChange("localIncomeTax", e.target.value)}
                                                         />
                                                     </div>
                                                 </div>
@@ -2323,6 +2435,135 @@ export default function CalculatorPage() {
                                                 </div>
                                             </>
                                         )}
+
+                                        {/* 자녀공제 */}
+                                        {cat.id === "childTaxCredit" && (
+                                            <>
+                                                {/* 자녀공제 세부 항목 */}
+                                                <div className="space-y-4">
+                                                    <h4 className="font-black text-sm border-b-2 border-black pb-2">👶 자녀 세액공제</h4>
+                                                    <div className="grid grid-cols-1 gap-4">
+                                                        <div className="space-y-2">
+                                                            <label className="font-bold flex items-center gap-2">
+                                                                만 8세 이상 자녀 수 (명)
+                                                                <Tooltip content="1명 25만원, 2명 55만원, 3명 이상 55만원 + 2명 초과 1명당 40만원">
+                                                                    <Info size={14} className="text-gray-400 cursor-help" />
+                                                                </Tooltip>
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
+                                                                className="neo-input"
+                                                                value={inputs.childrenOver8}
+                                                                onChange={(e) => setInputs(prev => ({ ...prev, childrenOver8: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <label className="font-bold flex items-center gap-2">
+                                                                출생·입양자
+                                                                <Tooltip content="첫째 30만원, 둘째 50만원, 셋째 이상 70만원/명">
+                                                                    <Info size={14} className="text-gray-400 cursor-help" />
+                                                                </Tooltip>
+                                                            </label>
+                                                            <select
+                                                                className="neo-input"
+                                                                value={inputs.birthAdoption}
+                                                                onChange={(e) => setInputs(prev => ({ ...prev, birthAdoption: e.target.value as FormInputs["birthAdoption"] }))}
+                                                            >
+                                                                <option value="none">선택 안함</option>
+                                                                <option value="first">첫째 (30만원)</option>
+                                                                <option value="second">둘째 (50만원)</option>
+                                                                <option value="third1">셋째 이상 1명 (70만원)</option>
+                                                                <option value="third2">셋째 이상 2명 (140만원)</option>
+                                                                <option value="third3">셋째 이상 3명 (210만원)</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* 계산식 */}
+                                                <div className="bg-neo-cyan/20 p-4 border-2 border-black space-y-2">
+                                                    <p className="font-bold text-sm">계산식</p>
+                                                    <div className="text-sm space-y-1">
+                                                        {inputs.childrenOver8 > 0 && (
+                                                            <>
+                                                                <p className="font-semibold">▸ 만 8세 이상 자녀</p>
+                                                                {inputs.childrenOver8 === 1 && (
+                                                                    <p>　1명: <span className="font-bold text-blue-600">250,000원</span></p>
+                                                                )}
+                                                                {inputs.childrenOver8 === 2 && (
+                                                                    <p>　2명: <span className="font-bold text-blue-600">550,000원</span></p>
+                                                                )}
+                                                                {inputs.childrenOver8 >= 3 && (
+                                                                    <p>　{inputs.childrenOver8}명: 550,000원 + ({inputs.childrenOver8} - 2) × 400,000원 = <span className="font-bold text-blue-600">{formatNumber(550000 + (inputs.childrenOver8 - 2) * 400000)}원</span></p>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                        {inputs.birthAdoption !== "none" && (
+                                                            <>
+                                                                <p className="font-semibold border-t border-black pt-1 mt-2">▸ 출생·입양</p>
+                                                                {inputs.birthAdoption === "first" && (
+                                                                    <p>　첫째: <span className="font-bold text-green-600">300,000원</span></p>
+                                                                )}
+                                                                {inputs.birthAdoption === "second" && (
+                                                                    <p>　둘째: <span className="font-bold text-green-600">500,000원</span></p>
+                                                                )}
+                                                                {inputs.birthAdoption === "third1" && (
+                                                                    <p>　셋째 이상 1명: 700,000원 × 1명 = <span className="font-bold text-green-600">700,000원</span></p>
+                                                                )}
+                                                                {inputs.birthAdoption === "third2" && (
+                                                                    <p>　셋째 이상 2명: 700,000원 × 2명 = <span className="font-bold text-green-600">1,400,000원</span></p>
+                                                                )}
+                                                                {inputs.birthAdoption === "third3" && (
+                                                                    <p>　셋째 이상 3명: 700,000원 × 3명 = <span className="font-bold text-green-600">2,100,000원</span></p>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* 자녀공제 합계 */}
+                                                <div className="bg-neo-yellow p-4 border-2 border-black">
+                                                    <p className="font-bold mb-1">👶 자녀 세액공제</p>
+                                                    <p className="text-2xl font-black">
+                                                        {formatNumber((() => {
+                                                            let total = 0;
+                                                            // 기본공제 대상 자녀
+                                                            if (inputs.childrenOver8 === 1) total += 250000;
+                                                            else if (inputs.childrenOver8 === 2) total += 550000;
+                                                            else if (inputs.childrenOver8 >= 3) total += 550000 + (inputs.childrenOver8 - 2) * 400000;
+                                                            // 출생·입양 공제
+                                                            if (inputs.birthAdoption === "first") total += 300000;
+                                                            else if (inputs.birthAdoption === "second") total += 500000;
+                                                            else if (inputs.birthAdoption === "third1") total += 700000;
+                                                            else if (inputs.birthAdoption === "third2") total += 1400000;
+                                                            else if (inputs.birthAdoption === "third3") total += 2100000;
+                                                            return total;
+                                                        })())}원
+                                                    </p>
+                                                    <div className="text-sm text-gray-600 mt-2 border-t border-black pt-2 space-y-1">
+                                                        {inputs.childrenOver8 > 0 && (
+                                                            <p>• <span className="font-bold">자녀 기본공제:</span> {formatNumber(
+                                                                inputs.childrenOver8 === 1 ? 250000 :
+                                                                    inputs.childrenOver8 === 2 ? 550000 :
+                                                                        inputs.childrenOver8 >= 3 ? 550000 + (inputs.childrenOver8 - 2) * 400000 : 0
+                                                            )}원</p>
+                                                        )}
+                                                        {inputs.birthAdoption !== "none" && (
+                                                            <p>• <span className="font-bold">출생·입양:</span> {formatNumber(
+                                                                inputs.birthAdoption === "first" ? 300000 :
+                                                                    inputs.birthAdoption === "second" ? 500000 :
+                                                                        inputs.birthAdoption === "third1" ? 700000 :
+                                                                            inputs.birthAdoption === "third2" ? 1400000 :
+                                                                                inputs.birthAdoption === "third3" ? 2100000 : 0
+                                                            )}원</p>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-gray-600 mt-1">💡 기본공제 대상 자녀 중 출생·입양자가 있으면 추가 공제</p>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </motion.div>
                             )}
@@ -2363,19 +2604,47 @@ export default function CalculatorPage() {
                         <h3 className="text-lg font-bold text-gray-400 mb-1">
                             ⑨ 예상 환급액
                         </h3>
-                        <div className={clsx(
-                            "text-4xl font-black mb-2",
-                            result ? (result.refund >= 0 ? "text-neo-cyan" : "text-red-400") : "text-gray-500"
-                        )}>
-                            {result
-                                ? `${result.refund >= 0 ? "+" : ""}${formatNumber(result.refund)}원`
-                                : "계산을 시작하세요"
-                            }
-                        </div>
-                        {result && (
-                            <p className="text-xs text-gray-500">
-                                결정세액 - 기납부세액 = {formatNumber(result.finalTax)} - {formatNumber(result.withheldTax)}
-                            </p>
+                        {(() => {
+                            if (!result) return null;
+                            // 소득세 환급: 결정세액 - 기납부세액(소득세)
+                            const incomeTaxRefund = result.finalTax - result.withheldTax;
+                            // 지방소득세 결정세액: 결정세액의 10%
+                            const localTaxDue = Math.round(result.finalTax * 0.1);
+                            // 지방소득세 환급: 지방소득세 결정세액 - 기납부세액(지방소득세)
+                            const localTaxRefund = localTaxDue - inputs.localIncomeTax;
+                            // 총 환급액
+                            const totalRefund = incomeTaxRefund + localTaxRefund;
+
+                            return (
+                                <>
+                                    <div className={clsx(
+                                        "text-4xl font-black mb-2",
+                                        totalRefund <= 0 ? "text-neo-cyan" : "text-red-400"
+                                    )}>
+                                        {formatNumber(totalRefund)}원
+                                    </div>
+                                    <div className="text-xs text-gray-500 space-y-1">
+                                        <p className="font-semibold text-gray-400">▸ 소득세</p>
+                                        <p className="pl-2">결정세액: {formatNumber(result.finalTax)}원</p>
+                                        <p className="pl-2">기납부세액: -{formatNumber(result.withheldTax)}원</p>
+                                        <p className="pl-2 text-neo-cyan">→ 소득세 환급: {formatNumber(incomeTaxRefund)}원</p>
+
+                                        <p className="font-semibold text-gray-400 pt-1">▸ 지방소득세</p>
+                                        <p className="pl-2">결정세액 (10%): {formatNumber(localTaxDue)}원</p>
+                                        <p className="pl-2">기납부세액: -{formatNumber(inputs.localIncomeTax)}원</p>
+                                        <p className="pl-2 text-neo-cyan">→ 지방소득세 환급: {formatNumber(localTaxRefund)}원</p>
+
+                                        <p className="border-t border-gray-600 pt-1 mt-1 font-semibold">
+                                            총 환급액: {formatNumber(incomeTaxRefund)} + {formatNumber(localTaxRefund)} = {formatNumber(totalRefund)}원
+                                        </p>
+                                    </div>
+                                </>
+                            );
+                        })()}
+                        {!result && (
+                            <div className="text-4xl font-black mb-2 text-gray-500">
+                                계산을 시작하세요
+                            </div>
                         )}
                     </div>
 
@@ -2423,7 +2692,7 @@ export default function CalculatorPage() {
                                 {/* 7. 세액공제 */}
                                 <div className="flex justify-between items-center">
                                     <span className="text-gray-600">⑦ 세액공제 합계</span>
-                                    <span className="font-bold text-green-600">-{formatNumber(result.totalTaxCredit)}원</span>
+                                    <span className="font-bold text-blue-600">-{formatNumber(result.totalTaxCredit)}원</span>
                                 </div>
 
                                 {/* 8. 결정세액 */}
@@ -2434,8 +2703,12 @@ export default function CalculatorPage() {
 
                                 {/* 기납부세액 */}
                                 <div className="flex justify-between items-center">
-                                    <span className="text-gray-600">기납부세액</span>
-                                    <span className="font-bold">{formatNumber(result.withheldTax)}원</span>
+                                    <span className="text-gray-600">기납부세액 (소득세)</span>
+                                    <span className="font-bold text-blue-600">-{formatNumber(result.withheldTax)}원</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">기납부세액 (지방소득세)</span>
+                                    <span className="font-bold text-blue-600">-{formatNumber(inputs.localIncomeTax)}원</span>
                                 </div>
                             </div>
                         </div>
@@ -2446,7 +2719,10 @@ export default function CalculatorPage() {
                         <div className="neo-card bg-white mb-4 text-sm">
                             <h4 className="font-bold mb-3 border-b-2 border-black pb-2">📊 공제 내역 상세</h4>
                             <div className="space-y-2 text-gray-600">
-                                <p className="font-bold text-sm text-black border-b border-black pb-1">소득공제 (④)</p>
+                                <div className="flex justify-between font-bold text-sm text-black border-b border-black pb-1">
+                                    <span>소득공제 (④)</span>
+                                    <span className="text-blue-600">{formatNumber(result.totalIncomeDeduction)}원</span>
+                                </div>
                                 <div className="flex justify-between">
                                     <span>인적공제</span>
                                     <span>{formatNumber(result.personalDeduction)}원</span>
@@ -2469,7 +2745,22 @@ export default function CalculatorPage() {
                                         <span>{formatNumber(result.housingDeduction)}원</span>
                                     </div>
                                 )}
-                                <p className="font-bold text-sm text-black border-b border-black pb-1 pt-2">세액공제 (⑦)</p>
+                                <div className="flex justify-between font-bold text-sm text-black border-b border-black pb-1 pt-2">
+                                    <span>세액공제 (⑦)</span>
+                                    <span className="text-blue-600">{formatNumber(result.totalTaxCredit)}원</span>
+                                </div>
+                                {result.earnedIncomeTaxCredit > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>근로소득세액공제</span>
+                                        <span>{formatNumber(result.earnedIncomeTaxCredit)}원</span>
+                                    </div>
+                                )}
+                                {result.childTaxCredit > 0 && (
+                                    <div className="flex justify-between">
+                                        <span>자녀세액공제</span>
+                                        <span>{formatNumber(result.childTaxCredit)}원</span>
+                                    </div>
+                                )}
                                 {result.medicalDeduction > 0 && (
                                     <div className="flex justify-between">
                                         <span>의료비</span>

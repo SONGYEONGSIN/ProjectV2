@@ -23,7 +23,8 @@ export interface AdminData {
                 healthInsurance: string;
                 longTermCare: string;
                 employmentInsurance: string;
-                prepaidTax: string;        // 기납부세액
+                prepaidTax: string;        // 기납부세액 (소득세)
+                localIncomeTax: string;    // 기납부세액 (지방소득세)
             }
         };
         // 연간 합계 (계산기로 전달용)
@@ -34,7 +35,8 @@ export interface AdminData {
         healthInsurance: number;   // 건강보험
         longTermCare: number;      // 노인장기요양보험
         employmentInsurance: number; // 고용보험
-        prepaidTax?: number;       // 기납부세액 (연간)
+        prepaidTax?: number;       // 기납부세액 (소득세, 연간)
+        localIncomeTax?: number;   // 기납부세액 (지방소득세, 연간)
     };
     spending: {
         creditCard: number;        // 신용카드
@@ -56,6 +58,8 @@ export interface AdminData {
         spouse: boolean;           // 배우자 유무
         children: number;          // 자녀 (만 20세 이하)
         childrenUnder6: number;    // 6세 이하 자녀 수 (보육수당 및 카드한도 확대용)
+        childrenOver8?: number;    // 8세 이상 자녀 수 (자녀세액공제)
+        birthAdoption?: "none" | "first" | "second" | "third1" | "third2" | "third3";  // 출생·입양자
         parents: number;           // 직계존속 (만 60세 이상)
         siblings: number;          // 형제자매 (만 20세 이하 또는 만 60세 이상)
         foster: number;            // 위탁아동 (6개월 이상)

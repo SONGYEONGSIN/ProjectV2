@@ -23,6 +23,8 @@ export interface AdminData {
                 healthInsurance: string;
                 longTermCare: string;
                 employmentInsurance: string;
+                bonus: string;             // 상여금
+                childTuition: string;      // 자녀학자금
                 prepaidTax: string;        // 기납부세액 (소득세)
                 localIncomeTax: string;    // 기납부세액 (지방소득세)
             }

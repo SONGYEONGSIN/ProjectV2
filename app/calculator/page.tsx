@@ -566,7 +566,7 @@ export default function CalculatorPage() {
         childrenUnder6: 1,           // 6세 이하 자녀 수
         salary: 56822780,            // 총급여액 (자동 계산됨)
         withheldTax: 1267560,        // 기납부세액 (소득세)
-        localIncomeTax: 126756,      // 기납부세액 (지방소득세)
+        localIncomeTax: 126720,      // 기납부세액 (지방소득세)
         // 인적공제 상세
         spouse: 0,                   // 배우자 (0 또는 1)
         parents: 0,                  // 직계존속 (만60세 이상)
@@ -735,7 +735,8 @@ export default function CalculatorPage() {
                 mealAllowance: adminData.salary.mealAllowance || 0,
                 childrenUnder6: adminData.salary.childrenUnder6 || 0,
                 salary: adminData.salary.totalSalary - (adminData.salary.mealAllowance || 0),
-                withheldTax: adminData.salary.prepaidTax || 0,  // 기납부세액
+                withheldTax: adminData.salary.prepaidTax || 0,  // 기납부세액 (소득세)
+                localIncomeTax: adminData.salary.localIncomeTax || 0,  // 기납부세액 (지방소득세)
                 nationalPension: adminData.salary.nationalPension,
                 healthInsurance: adminData.salary.healthInsurance,
                 longTermCare: adminData.salary.longTermCare || 0,
@@ -852,7 +853,7 @@ export default function CalculatorPage() {
                             onClick={handleReset}
                             className={clsx(
                                 "flex items-center gap-2 px-4 py-2 text-sm font-bold border-2 border-black shadow-[4px_4px_0px_0px_#000] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all",
-                                isResetting ? "bg-neo-orange translate-x-[4px] translate-y-[4px] shadow-none" : "bg-white"
+                                isResetting ? "bg-neo-orange translate-x-[4px] translate-y-[4px] shadow-none" : "bg-black text-white"
                             )}
                         >
                             <RefreshCw size={14} className={isResetting ? "animate-spin" : ""} /> 초기화
@@ -1009,7 +1010,7 @@ export default function CalculatorPage() {
                                                         <div className="space-y-2">
                                                             <label className="font-bold text-sm h-6 flex items-center">본인공제</label>
                                                             <div className="neo-input bg-gray-100 text-gray-500 cursor-not-allowed">
-                                                                150만원 (고정)
+                                                                1,500,000
                                                             </div>
                                                         </div>
                                                         <div className="space-y-2">
@@ -1049,10 +1050,12 @@ export default function CalculatorPage() {
                                                                 </Tooltip>
                                                             </label>
                                                             <input
-                                                                type="text"
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
                                                                 className="neo-input"
                                                                 value={inputs.parents}
-                                                                onChange={(e) => handleInputChange("parents", e.target.value)}
+                                                                onChange={(e) => setInputs(prev => ({ ...prev, parents: Math.max(0, parseInt(e.target.value) || 0), dependents: 1 + prev.spouse + Math.max(0, parseInt(e.target.value) || 0) + prev.children + prev.siblings + prev.foster + prev.recipient }))}
                                                             />
                                                         </div>
                                                         <div className="space-y-2">
@@ -1063,10 +1066,12 @@ export default function CalculatorPage() {
                                                                 </Tooltip>
                                                             </label>
                                                             <input
-                                                                type="text"
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
                                                                 className="neo-input"
                                                                 value={inputs.children}
-                                                                onChange={(e) => handleInputChange("children", e.target.value)}
+                                                                onChange={(e) => setInputs(prev => ({ ...prev, children: Math.max(0, parseInt(e.target.value) || 0), dependents: 1 + prev.spouse + prev.parents + Math.max(0, parseInt(e.target.value) || 0) + prev.siblings + prev.foster + prev.recipient }))}
                                                             />
                                                         </div>
                                                         <div className="space-y-2">
@@ -1077,10 +1082,12 @@ export default function CalculatorPage() {
                                                                 </Tooltip>
                                                             </label>
                                                             <input
-                                                                type="text"
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
                                                                 className="neo-input"
                                                                 value={inputs.siblings}
-                                                                onChange={(e) => handleInputChange("siblings", e.target.value)}
+                                                                onChange={(e) => setInputs(prev => ({ ...prev, siblings: Math.max(0, parseInt(e.target.value) || 0), dependents: 1 + prev.spouse + prev.parents + prev.children + Math.max(0, parseInt(e.target.value) || 0) + prev.foster + prev.recipient }))}
                                                             />
                                                         </div>
                                                         <div className="space-y-2">
@@ -1091,10 +1098,12 @@ export default function CalculatorPage() {
                                                                 </Tooltip>
                                                             </label>
                                                             <input
-                                                                type="text"
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
                                                                 className="neo-input"
                                                                 value={inputs.foster}
-                                                                onChange={(e) => handleInputChange("foster", e.target.value)}
+                                                                onChange={(e) => setInputs(prev => ({ ...prev, foster: Math.max(0, parseInt(e.target.value) || 0), dependents: 1 + prev.spouse + prev.parents + prev.children + prev.siblings + Math.max(0, parseInt(e.target.value) || 0) + prev.recipient }))}
                                                             />
                                                         </div>
                                                         <div className="space-y-2">
@@ -1105,10 +1114,12 @@ export default function CalculatorPage() {
                                                                 </Tooltip>
                                                             </label>
                                                             <input
-                                                                type="text"
+                                                                type="number"
+                                                                min="0"
+                                                                max="10"
                                                                 className="neo-input"
                                                                 value={inputs.recipient}
-                                                                onChange={(e) => handleInputChange("recipient", e.target.value)}
+                                                                onChange={(e) => setInputs(prev => ({ ...prev, recipient: Math.max(0, parseInt(e.target.value) || 0), dependents: 1 + prev.spouse + prev.parents + prev.children + prev.siblings + prev.foster + Math.max(0, parseInt(e.target.value) || 0) }))}
                                                             />
                                                         </div>
                                                     </div>
@@ -1228,7 +1239,7 @@ export default function CalculatorPage() {
                                             <>
                                                 {/* 기본 카드 사용액 */}
                                                 <div className="space-y-4">
-                                                    <h4 className="font-black text-sm border-b-2 border-black pb-2">신용카드·체크카드·현금영수증</h4>
+                                                    <h4 className="font-black text-sm border-b-2 border-black pb-2">💳 신용카드·체크카드·현금영수증</h4>
                                                     <div className="grid grid-cols-1 gap-4">
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
@@ -1298,7 +1309,7 @@ export default function CalculatorPage() {
 
                                                 {/* 추가 공제 항목 */}
                                                 <div className="space-y-4 border-t-2 border-gray-200 pt-4">
-                                                    <h4 className="font-black text-sm border-b-2 border-black pb-2">추가 공제 항목</h4>
+                                                    <h4 className="font-black text-sm border-b-2 border-black pb-2">➕ 추가 공제 항목</h4>
                                                     <div className="grid grid-cols-1 gap-4">
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
@@ -1406,10 +1417,7 @@ export default function CalculatorPage() {
                                                             return (
                                                                 <>
                                                                     {/* 25% 기준 */}
-                                                                    <p className="font-semibold">▸ 25% 기준금액 (순차 소진)</p>
-                                                                    <p>총급여의 25%: {formatNumber(threshold)}원</p>
-                                                                    <p>총 사용액: {formatNumber(totalUsed)}원</p>
-                                                                    <p>공제 대상 (초과분): {formatNumber(Math.max(0, totalUsed - threshold))}원</p>
+                                                                    <p className="font-semibold">▸ 총급여의 25%: {formatNumber(threshold)}원 (순차 소진)</p>
 
                                                                     {/* 순차 소진 상세 */}
                                                                     <p className="font-semibold border-t border-black pt-1 mt-2">▸ 25% 소진 순서 (초과분만 공제)</p>
@@ -1798,10 +1806,18 @@ export default function CalculatorPage() {
                                                 <div className="bg-neo-cyan/20 p-4 border-2 border-black space-y-2">
                                                     <p className="font-bold text-sm">계산식</p>
                                                     <div className="text-sm space-y-1">
-                                                        <p>본인 교육비: {formatNumber(inputs.selfEducation)}원 × 15%</p>
-                                                        <p>미취학: {formatNumber(Math.min(inputs.preschool, 3000000))}원 × 15% (한도 300만원)</p>
-                                                        <p>초중고: {formatNumber(Math.min(inputs.elementary, 3000000))}원 × 15% (한도 300만원)</p>
-                                                        <p>대학: {formatNumber(Math.min(inputs.university, 9000000))}원 × 15% (한도 900만원)</p>
+                                                        {inputs.selfEducation > 0 && (
+                                                            <p>본인 교육비: {formatNumber(inputs.selfEducation)}원 × 15%</p>
+                                                        )}
+                                                        {inputs.preschool > 0 && (
+                                                            <p>미취학: {formatNumber(Math.min(inputs.preschool, 3000000))}원 × 15% (한도 300만원)</p>
+                                                        )}
+                                                        {inputs.elementary > 0 && (
+                                                            <p>초중고: {formatNumber(Math.min(inputs.elementary, 3000000))}원 × 15% (한도 300만원)</p>
+                                                        )}
+                                                        {inputs.university > 0 && (
+                                                            <p>대학: {formatNumber(Math.min(inputs.university, 9000000))}원 × 15% (한도 900만원)</p>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -2054,12 +2070,11 @@ export default function CalculatorPage() {
                                                         {(inputs.pensionSavings > 0 || inputs.irp > 0 || inputs.isaTransfer > 0) && (
                                                             <>
                                                                 <p className="font-semibold">▸ 연금계좌</p>
-                                                                <p>공제율: 12% (지방세 제외)</p>
                                                                 {inputs.pensionSavings > 0 && (
-                                                                    <p>연금저축: {formatNumber(Math.min(inputs.pensionSavings, 6000000))}원 (한도 600만원)</p>
+                                                                    <p>연금저축: {formatNumber(Math.min(inputs.pensionSavings, 6000000))}원 × 12% (한도 600만원)</p>
                                                                 )}
                                                                 {inputs.irp > 0 && (
-                                                                    <p>IRP: {formatNumber(Math.min(inputs.irp, 9000000 - Math.min(inputs.pensionSavings, 6000000)))}원 (총 900만원 한도)</p>
+                                                                    <p>퇴직연금(IRP): {formatNumber(Math.min(inputs.irp, 9000000 - Math.min(inputs.pensionSavings, 6000000)))}원 × 12% (총 900만원 한도)</p>
                                                                 )}
                                                                 {inputs.isaTransfer > 0 && (
                                                                     <p>ISA 전환: {formatNumber(Math.min(inputs.isaTransfer * 0.1, 3000000))}원 (10%, 한도 300만원)</p>
@@ -2098,13 +2113,11 @@ export default function CalculatorPage() {
                                                                 Math.min(inputs.irp, 9000000 - Math.min(inputs.pensionSavings, 6000000)) +
                                                                 Math.min(inputs.isaTransfer * 0.1, 3000000)) * 0.12
                                                         ))}원 세액공제</p>
-                                                        <p>• <span className="font-bold">보험료:</span> {formatNumber(
+                                                        <p>• <span className="font-bold">보장성보험료:</span> {formatNumber(
                                                             Math.round(Math.min(inputs.generalInsurance, 1000000) * 0.12) +
                                                             Math.round(Math.min(inputs.disabledInsurance, 1000000) * 0.15)
                                                         )}원 세액공제</p>
-                                                        {inputs.generalInsurance > 0 && (
-                                                            <p className="pl-4 text-xs">- 일반 보장성: {formatNumber(Math.round(Math.min(inputs.generalInsurance, 1000000) * 0.12))}원</p>
-                                                        )}
+
                                                         {inputs.disabledInsurance > 0 && (
                                                             <p className="pl-4 text-xs">- 장애인 전용: {formatNumber(Math.round(Math.min(inputs.disabledInsurance, 1000000) * 0.15))}원</p>
                                                         )}

@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
     DollarSign,
     CreditCard,
     FileText,
-    Camera,
     RefreshCw,
     Plus,
     X,
     CheckCircle,
     AlertCircle,
     Users,
+    Upload,
 } from "lucide-react";
 import clsx from "clsx";
 import * as XLSX from "xlsx";
@@ -25,6 +26,8 @@ interface MonthlySalaryData {
     healthInsurance: string;       // 건강보험
     longTermCare: string;          // 노인장기요양보험
     employmentInsurance: string;   // 고용보험
+    bonus: string;                 // 상여금
+    childTuition: string;          // 자녀학자금
     prepaidTax: string;            // 기납부세액 (소득세)
     localIncomeTax: string;        // 기납부세액 (지방소득세)
 }
@@ -52,6 +55,8 @@ export default function AdminPage() {
             healthInsurance: "0",
             longTermCare: "0",
             employmentInsurance: "0",
+            bonus: "0",
+            childTuition: "0",
             prepaidTax: "0",
             localIncomeTax: "0",
         };
@@ -64,12 +69,16 @@ export default function AdminPage() {
     const [clickedBtn, setClickedBtn] = useState<string | null>(null);
     const [notification, setNotification] = useState<Notification | null>(null);
     const [showCameraModal, setShowCameraModal] = useState(false);
-    const [capturedImage, setCapturedImage] = useState<string | null>(null);
-    const [isCameraActive, setIsCameraActive] = useState(false);
+    const [capturedImages, setCapturedImages] = useState<string[]>([]);
+    const [isDragging, setIsDragging] = useState(false);
+    const [showExcelModal, setShowExcelModal] = useState(false);
+    const [excelFile, setExcelFile] = useState<File | null>(null);
+    const [isExcelDragging, setIsExcelDragging] = useState(false);
+    const [excelModalMonth, setExcelModalMonth] = useState(1);
+    const [ocrModalMonth, setOcrModalMonth] = useState(1);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
+    const ocrImageInputRef = useRef<HTMLInputElement>(null);
 
     // 지출 항목 상태
     const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([
@@ -126,6 +135,8 @@ export default function AdminPage() {
                     healthInsurance: savedData.salary.healthInsurance?.toLocaleString("ko-KR") || "0",
                     longTermCare: savedData.salary.longTermCare?.toLocaleString("ko-KR") || "0",
                     employmentInsurance: savedData.salary.employmentInsurance?.toLocaleString("ko-KR") || "0",
+                    bonus: savedData.salary.bonus?.toLocaleString("ko-KR") || "0",
+                    childTuition: savedData.salary.childTuition?.toLocaleString("ko-KR") || "0",
                     prepaidTax: savedData.salary.prepaidTax?.toLocaleString("ko-KR") || "0",
                     localIncomeTax: savedData.salary.localIncomeTax?.toLocaleString("ko-KR") || "0",
                 };
@@ -253,6 +264,7 @@ export default function AdminPage() {
                 longTermCare: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.longTermCare), 0),
                 employmentInsurance: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.employmentInsurance), 0),
                 prepaidTax: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.prepaidTax), 0),
+                localIncomeTax: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.localIncomeTax), 0),
             },
             spending: {
                 creditCard: getSpendingAmount("신용카드"),
@@ -320,11 +332,8 @@ export default function AdminPage() {
         return num.toLocaleString("ko-KR");
     };
 
-    // Excel Upload Handler
-    const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
+    // Excel Upload Handler - Process file
+    const processExcelFile = (file: File) => {
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
@@ -360,9 +369,10 @@ export default function AdminPage() {
                 if (Object.keys(newSalaryData).length > 0) {
                     setMonthlySalary(prev => ({
                         ...prev,
-                        [selectedMonth]: { ...prev[selectedMonth], ...newSalaryData }
+                        [excelModalMonth]: { ...prev[excelModalMonth], ...newSalaryData }
                     }));
-                    showNotification("success", `${selectedMonth}월 엑셀 데이터를 성공적으로 불러왔습니다!`);
+                    showNotification("success", `${excelModalMonth}월 엑셀 데이터를 성공적으로 불러왔습니다!`);
+                    handleExcelModalClose();
                 } else {
                     showNotification("error", "인식할 수 있는 데이터가 없습니다. 엑셀 형식을 확인해주세요.");
                 }
@@ -371,64 +381,124 @@ export default function AdminPage() {
             }
         };
         reader.readAsArrayBuffer(file);
-        e.target.value = ""; // Reset input
     };
 
-    // Camera Functions
-    const startCamera = useCallback(async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" },
-            });
-            streamRef.current = stream;
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
+    const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setExcelFile(file);
+    };
+
+    const handleExcelDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsExcelDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+            setExcelFile(file);
+        } else {
+            showNotification("error", "엑셀 파일(.xlsx, .xls)만 업로드 가능합니다.");
+        }
+    };
+
+    const handleExcelDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsExcelDragging(true);
+    };
+
+    const handleExcelDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsExcelDragging(false);
+    };
+
+    const handleExcelModalOpen = () => {
+        setShowExcelModal(true);
+        setExcelFile(null);
+        setExcelModalMonth(selectedMonth);
+    };
+
+    const handleExcelModalClose = () => {
+        setShowExcelModal(false);
+        setExcelFile(null);
+        setIsExcelDragging(false);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    };
+
+    const handleExcelApply = () => {
+        if (excelFile) {
+            processExcelFile(excelFile);
+        }
+    };
+
+    // OCR Image Upload Functions
+    const processImageFiles = (files: FileList | null) => {
+        if (!files) return;
+        const maxImages = 10;
+        const currentCount = capturedImages.length;
+        const remainingSlots = maxImages - currentCount;
+
+        if (remainingSlots <= 0) {
+            showNotification("error", `최대 ${maxImages}개까지 업로드 가능합니다.`);
+            return;
+        }
+
+        const filesToProcess = Array.from(files).slice(0, remainingSlots);
+
+        filesToProcess.forEach(file => {
+            if (file.type.startsWith("image/")) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    setCapturedImages(prev => [...prev, event.target?.result as string]);
+                };
+                reader.readAsDataURL(file);
             }
-            setIsCameraActive(true);
-            setCapturedImage(null);
-        } catch {
-            showNotification("error", "카메라에 접근할 수 없습니다. 권한을 확인해주세요.");
-            setShowCameraModal(false);
-        }
-    }, []);
-
-    const stopCamera = useCallback(() => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        setIsCameraActive(false);
-    }, []);
-
-    const captureImage = () => {
-        if (videoRef.current) {
-            const canvas = document.createElement("canvas");
-            canvas.width = videoRef.current.videoWidth;
-            canvas.height = videoRef.current.videoHeight;
-            const ctx = canvas.getContext("2d");
-            ctx?.drawImage(videoRef.current, 0, 0);
-            const imageData = canvas.toDataURL("image/jpeg");
-            setCapturedImage(imageData);
-            stopCamera();
-        }
+        });
     };
 
-    const handleCameraOpen = () => {
+    const handleOcrImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        processImageFiles(e.target.files);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        processImageFiles(e.dataTransfer.files);
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    const removeImage = (index: number) => {
+        setCapturedImages(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleOcrModalOpen = () => {
         setShowCameraModal(true);
-        setTimeout(startCamera, 100);
+        setCapturedImages([]);
+        setOcrModalMonth(selectedMonth);
     };
 
-    const handleCameraClose = () => {
-        stopCamera();
+    const handleOcrModalClose = () => {
         setShowCameraModal(false);
-        setCapturedImage(null);
+        setCapturedImages([]);
+        setIsDragging(false);
+        if (ocrImageInputRef.current) {
+            ocrImageInputRef.current.value = "";
+        }
     };
 
-    const handleUseCapture = () => {
-        // In a real implementation, this would send the image to an OCR API
-        // For now, we'll just show a success message
-        showNotification("success", "이미지가 캡처되었습니다. OCR 분석은 서버 연동이 필요합니다.");
-        handleCameraClose();
+    const handleUseImage = () => {
+        // In a real implementation, this would send the images to an OCR API
+        showNotification("success", `${ocrModalMonth}월에 ${capturedImages.length}개 이미지가 업로드되었습니다. OCR 분석은 서버 연동이 필요합니다.`);
+        handleOcrModalClose();
     };
 
     const handleSalaryInputChange = (field: keyof MonthlySalaryData, value: string) => {
@@ -468,8 +538,8 @@ export default function AdminPage() {
             )}
 
             {/* Add Item Modal */}
-            {showAddItemModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+            {showAddItemModal && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
                     <div className="bg-white border-[3px] border-black p-6 max-w-md w-full mx-4 shadow-[8px_8px_0px_0px_#000]">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-black">수동 항목 추가</h3>
@@ -487,6 +557,18 @@ export default function AdminPage() {
                         </div>
 
                         <div className="space-y-4">
+                            <div>
+                                <label className="block font-bold mb-2">월 선택</label>
+                                <select
+                                    className="neo-input"
+                                    value={newItemMonth}
+                                    onChange={(e) => setNewItemMonth(parseInt(e.target.value))}
+                                >
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+                                        <option key={m} value={m}>{m}월</option>
+                                    ))}
+                                </select>
+                            </div>
                             <div>
                                 <label className="block font-bold mb-2">항목명</label>
                                 <input
@@ -511,18 +593,6 @@ export default function AdminPage() {
                                         setNewItemAmount(formatted);
                                     }}
                                 />
-                            </div>
-                            <div>
-                                <label className="block font-bold mb-2">월 선택</label>
-                                <select
-                                    className="neo-input"
-                                    value={newItemMonth}
-                                    onChange={(e) => setNewItemMonth(parseInt(e.target.value))}
-                                >
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
-                                        <option key={m} value={m}>{m}월</option>
-                                    ))}
-                                </select>
                             </div>
                         </div>
 
@@ -551,71 +621,248 @@ export default function AdminPage() {
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
-            {/* Camera Modal */}
-            {showCameraModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-                    <div className="bg-white border-[3px] border-black p-4 max-w-lg w-full mx-4 shadow-[8px_8px_0px_0px_#000]">
+            {/* OCR Image Upload Modal */}
+            {showCameraModal && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
+                    <div className="bg-white border-[3px] border-black p-4 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000] max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-black">OCR 촬영</h3>
+                            <div>
+                                <h3 className="text-lg font-black flex items-center gap-2">
+                                    <Upload size={20} /> 이미지 업로드 (OCR)
+                                </h3>
+                                <p className="text-sm text-gray-500">최대 10개까지 업로드 가능</p>
+                            </div>
                             <button
-                                onClick={handleCameraClose}
-                                className="p-2 hover:bg-gray-100 border-2 border-black"
+                                onClick={() => handleButtonClick("ocrModalClose", handleOcrModalClose)}
+                                className={clsx(
+                                    "p-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] transition-all",
+                                    clickedBtn === "ocrModalClose"
+                                        ? "bg-neo-orange translate-x-[2px] translate-y-[2px] shadow-none"
+                                        : "bg-white hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_#000]"
+                                )}
                             >
                                 <X size={20} />
                             </button>
                         </div>
 
-                        <div className="aspect-video bg-black mb-4 border-2 border-black overflow-hidden">
-                            {capturedImage ? (
-                                <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
+                        {/* 월 선택 */}
+                        <div className="mb-4">
+                            <label className="block font-bold mb-2">적용할 월 선택</label>
+                            <select
+                                className="neo-input"
+                                value={ocrModalMonth}
+                                onChange={(e) => setOcrModalMonth(parseInt(e.target.value))}
+                            >
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+                                    <option key={m} value={m}>{m}월</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* 드래그앤드롭 영역 */}
+                        <div
+                            className={clsx(
+                                "min-h-[200px] mb-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all",
+                                isDragging ? "border-neo-cyan bg-neo-cyan/20 scale-[1.02]" : "border-gray-400 bg-gray-50 hover:bg-gray-100"
+                            )}
+                            onDrop={handleDrop}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onClick={() => ocrImageInputRef.current?.click()}
+                        >
+                            {capturedImages.length > 0 ? (
+                                <div className="w-full p-4">
+                                    <p className="text-center text-sm font-bold mb-3">{capturedImages.length}개 이미지 업로드됨</p>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {capturedImages.map((img, index) => (
+                                            <div key={index} className="relative aspect-square border-2 border-black overflow-hidden group">
+                                                <img src={img} alt={`Uploaded ${index + 1}`} className="w-full h-full object-cover" />
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        removeImage(index);
+                                                    }}
+                                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-center text-xs text-gray-500 mt-3">클릭 또는 드래그하여 더 추가</p>
+                                </div>
                             ) : (
-                                <video
-                                    ref={videoRef}
-                                    autoPlay
-                                    playsInline
-                                    className="w-full h-full object-cover"
-                                />
+                                <div className="text-center text-gray-500 p-4">
+                                    <p className="text-3xl mb-2">📁</p>
+                                    <p className="text-lg font-bold mb-1">이미지를 드래그하거나 클릭하세요</p>
+                                    <p className="text-sm">영수증, 원천징수영수증 등</p>
+                                </div>
                             )}
                         </div>
 
+                        <input
+                            ref={ocrImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleOcrImageUpload}
+                            className="hidden"
+                        />
+
                         <div className="flex gap-2">
-                            {capturedImage ? (
+                            {capturedImages.length > 0 ? (
                                 <>
                                     <button
                                         onClick={() => {
-                                            setCapturedImage(null);
-                                            startCamera();
+                                            setCapturedImages([]);
+                                            if (ocrImageInputRef.current) {
+                                                ocrImageInputRef.current.value = "";
+                                            }
                                         }}
                                         className="flex-1 py-3 font-bold border-2 border-black bg-white hover:bg-gray-100"
                                     >
-                                        다시 촬영
+                                        전체 삭제
                                     </button>
                                     <button
-                                        onClick={handleUseCapture}
+                                        onClick={handleUseImage}
                                         className="flex-1 py-3 font-bold border-2 border-black bg-neo-cyan hover:bg-cyan-300"
                                     >
-                                        사용하기
+                                        사용하기 ({capturedImages.length}개)
                                     </button>
                                 </>
                             ) : (
                                 <button
-                                    onClick={captureImage}
-                                    disabled={!isCameraActive}
+                                    onClick={() => handleButtonClick("ocrImageSelect", () => ocrImageInputRef.current?.click())}
                                     className={clsx(
-                                        "w-full py-3 font-bold border-2 border-black",
-                                        isCameraActive ? "bg-neo-yellow hover:bg-yellow-400" : "bg-gray-300 cursor-not-allowed"
+                                        "w-full py-3 font-bold border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all",
+                                        clickedBtn === "ocrImageSelect"
+                                            ? "bg-neo-orange translate-x-[4px] translate-y-[4px] shadow-none"
+                                            : "bg-neo-cyan hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000]"
                                     )}
                                 >
-                                    <Camera className="inline mr-2" size={20} />
-                                    촬영하기
+                                    📁 이미지 선택
                                 </button>
                             )}
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
+            )}
+
+            {/* Excel Upload Modal */}
+            {showExcelModal && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
+                    <div className="bg-white border-[3px] border-black p-4 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000]">
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-lg font-black flex items-center gap-2">
+                                    <FileText size={20} /> 엑셀 업로드
+                                </h3>
+                                <p className="text-sm text-gray-500">급여 데이터 적용</p>
+                            </div>
+                            <button
+                                onClick={() => handleButtonClick("excelModalClose", handleExcelModalClose)}
+                                className={clsx(
+                                    "p-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] transition-all",
+                                    clickedBtn === "excelModalClose"
+                                        ? "bg-neo-orange translate-x-[2px] translate-y-[2px] shadow-none"
+                                        : "bg-white hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_#000]"
+                                )}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* 월 선택 */}
+                        <div className="mb-4">
+                            <label className="block font-bold mb-2">적용할 월 선택</label>
+                            <select
+                                className="neo-input"
+                                value={excelModalMonth}
+                                onChange={(e) => setExcelModalMonth(parseInt(e.target.value))}
+                            >
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+                                    <option key={m} value={m}>{m}월</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* 드래그앤드롭 영역 */}
+                        <div
+                            className={clsx(
+                                "min-h-[180px] mb-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all",
+                                isExcelDragging ? "border-neo-cyan bg-neo-cyan/20 scale-[1.02]" : "border-gray-400 bg-gray-50 hover:bg-gray-100"
+                            )}
+                            onDrop={handleExcelDrop}
+                            onDragOver={handleExcelDragOver}
+                            onDragLeave={handleExcelDragLeave}
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            {excelFile ? (
+                                <div className="text-center p-4">
+                                    <p className="text-3xl mb-2">📊</p>
+                                    <p className="text-lg font-bold mb-1">{excelFile.name}</p>
+                                    <p className="text-sm text-gray-500">{(excelFile.size / 1024).toFixed(1)} KB</p>
+                                </div>
+                            ) : (
+                                <div className="text-center text-gray-500 p-4">
+                                    <p className="text-3xl mb-2">📁</p>
+                                    <p className="text-lg font-bold mb-1">엑셀 파일을 드래그하거나 클릭하세요</p>
+                                    <p className="text-sm">.xlsx, .xls 파일 지원</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".xlsx,.xls"
+                            onChange={handleExcelUpload}
+                            className="hidden"
+                        />
+
+                        <div className="flex gap-2">
+                            {excelFile ? (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            setExcelFile(null);
+                                            if (fileInputRef.current) {
+                                                fileInputRef.current.value = "";
+                                            }
+                                        }}
+                                        className="flex-1 py-3 font-bold border-2 border-black bg-white hover:bg-gray-100"
+                                    >
+                                        다시 선택
+                                    </button>
+                                    <button
+                                        onClick={handleExcelApply}
+                                        className="flex-1 py-3 font-bold border-2 border-black bg-neo-cyan hover:bg-cyan-300"
+                                    >
+                                        적용하기
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    onClick={() => handleButtonClick("excelFileSelect", () => fileInputRef.current?.click())}
+                                    className={clsx(
+                                        "w-full py-3 font-bold border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all",
+                                        clickedBtn === "excelFileSelect"
+                                            ? "bg-neo-orange translate-x-[4px] translate-y-[4px] shadow-none"
+                                            : "bg-neo-cyan hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000]"
+                                    )}
+                                >
+                                    📁 파일 선택
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -657,6 +904,50 @@ export default function AdminPage() {
                                     매월 급여명세서 기준 입력
                                 </p>
                             </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={() => handleButtonClick("copy1to3", () => {
+                                    const currentData = monthlySalary[selectedMonth];
+                                    if (currentData) {
+                                        const newMonthlySalary = { ...monthlySalary };
+                                        for (let m = 1; m <= 3; m++) {
+                                            newMonthlySalary[m] = { ...currentData };
+                                        }
+                                        setMonthlySalary(newMonthlySalary);
+                                        showNotification("success", `${selectedMonth}월 데이터를 1월~3월에 복사했습니다.`);
+                                    }
+                                })}
+                                className={clsx(
+                                    "px-3 py-2 text-xs font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all",
+                                    clickedBtn === "copy1to3"
+                                        ? "bg-neo-orange translate-x-[3px] translate-y-[3px] shadow-none"
+                                        : "bg-neo-yellow hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000]"
+                                )}
+                            >
+                                1월~3월 동일 적용
+                            </button>
+                            <button
+                                onClick={() => handleButtonClick("copy3to12", () => {
+                                    const currentData = monthlySalary[selectedMonth];
+                                    if (currentData) {
+                                        const newMonthlySalary = { ...monthlySalary };
+                                        for (let m = 3; m <= 12; m++) {
+                                            newMonthlySalary[m] = { ...currentData };
+                                        }
+                                        setMonthlySalary(newMonthlySalary);
+                                        showNotification("success", `${selectedMonth}월 데이터를 3월~12월에 복사했습니다.`);
+                                    }
+                                })}
+                                className={clsx(
+                                    "px-3 py-2 text-xs font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all",
+                                    clickedBtn === "copy3to12"
+                                        ? "bg-neo-orange translate-x-[3px] translate-y-[3px] shadow-none"
+                                        : "bg-neo-pink hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000]"
+                                )}
+                            >
+                                3월~12월 동일 적용
+                            </button>
                         </div>
                     </div>
                     {/* Month Tabs */}
@@ -732,6 +1023,24 @@ export default function AdminPage() {
                                 className="neo-input"
                                 value={monthlySalary[selectedMonth]?.employmentInsurance || "0"}
                                 onChange={(e) => handleSalaryInputChange("employmentInsurance", e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block font-bold mb-2">상여금</label>
+                            <input
+                                type="text"
+                                className="neo-input"
+                                value={monthlySalary[selectedMonth]?.bonus || "0"}
+                                onChange={(e) => handleSalaryInputChange("bonus", e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block font-bold mb-2">자녀학자금</label>
+                            <input
+                                type="text"
+                                className="neo-input"
+                                value={monthlySalary[selectedMonth]?.childTuition || "0"}
+                                onChange={(e) => handleSalaryInputChange("childTuition", e.target.value)}
                             />
                         </div>
                         <div>
@@ -918,7 +1227,7 @@ export default function AdminPage() {
                         </div>
                         <div className="flex gap-2 flex-wrap w-full md:w-auto">
                             <button
-                                onClick={() => handleButtonClick("excel", () => fileInputRef.current?.click())}
+                                onClick={() => handleButtonClick("excel", handleExcelModalOpen)}
                                 className={clsx(
                                     "flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 border-2 border-black font-bold text-xs md:text-sm shadow-[4px_4px_0px_0px_#000] transition-all",
                                     clickedBtn === "excel"
@@ -929,7 +1238,7 @@ export default function AdminPage() {
                                 <FileText size={14} className={clsx("md:w-4 md:h-4", clickedBtn === "excel" && "animate-spin")} /> 엑셀
                             </button>
                             <button
-                                onClick={() => handleButtonClick("ocr", handleCameraOpen)}
+                                onClick={() => handleButtonClick("ocr", handleOcrModalOpen)}
                                 className={clsx(
                                     "flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 border-2 border-black font-bold text-xs md:text-sm shadow-[4px_4px_0px_0px_#000] transition-all",
                                     clickedBtn === "ocr"
@@ -937,7 +1246,7 @@ export default function AdminPage() {
                                         : "bg-neo-yellow hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000]"
                                 )}
                             >
-                                <Camera size={14} className={clsx("md:w-4 md:h-4", clickedBtn === "ocr" && "animate-pulse")} /> OCR
+                                <Upload size={14} className="md:w-4 md:h-4" /> OCR
                             </button>
                             <button
                                 onClick={() => handleButtonClick("sync", () => showNotification("success", "카드사 연동 기능 준비중입니다!"))}

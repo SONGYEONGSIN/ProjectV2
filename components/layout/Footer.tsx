@@ -86,7 +86,7 @@ export function Footer() {
                             CONTACT
                         </h4>
                         <ul className="space-y-2 text-sm font-bold text-gray-600">
-                            <li>customer@taxai.com</li>
+                            <li>ysong2526@gmail.com</li>
                             <li>02-1234-5678</li>
                         </ul>
                     </div>
@@ -97,15 +97,22 @@ export function Footer() {
                         © 2026 TaxAI. All rights reserved.
                     </p>
                     <div className="flex gap-4">
-                        <div className="w-10 h-10 rounded-full border-2 border-black bg-neo-cyan flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer shadow-[2px_2px_0px_0px_#000]">
-                            <span className="font-black text-xs">FB</span>
-                        </div>
-                        <div className="w-10 h-10 rounded-full border-2 border-black bg-neo-yellow flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer shadow-[2px_2px_0px_0px_#000]">
-                            <span className="font-black text-xs">IG</span>
-                        </div>
-                        <div className="w-10 h-10 rounded-full border-2 border-black bg-neo-orange flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer shadow-[2px_2px_0px_0px_#000]">
-                            <span className="font-black text-xs">YT</span>
-                        </div>
+                        <a
+                            href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?mi=6435&cntntsId=7871"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="h-10 px-4 border-2 border-black bg-neo-cyan flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer shadow-[2px_2px_0px_0px_#000]"
+                        >
+                            <span className="font-black text-xs">국세청</span>
+                        </a>
+                        <a
+                            href="https://www.koreatax.org/tax/index.php3"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="h-10 px-4 border-2 border-black bg-neo-yellow flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer shadow-[2px_2px_0px_0px_#000]"
+                        >
+                            <span className="font-black text-xs">한국납세자연맹</span>
+                        </a>
                     </div>
                 </div>
             </div>

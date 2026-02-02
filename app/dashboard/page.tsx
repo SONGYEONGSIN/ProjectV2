@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { TrendingUp, Sparkles, Bell, Target, ChevronUp, ChevronDown, AlertCircle, CheckCircle2, Lightbulb, PiggyBank, CreditCard, Home, Heart, GraduationCap, Gift, Building, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { loadTaxData, loadAdminData, generateDeductionAnalysis, DeductionAnalysis } from "@/lib/tax-store";
+import { generateRecommendations, getDefaultRecommendations, calculateTotalPotentialSaving, AIRecommendation } from "@/lib/ai-recommendation";
 
 interface NewsArticle {
     id: string;
@@ -263,13 +265,136 @@ export default function DashboardPage() {
     const [goalAmount, setGoalAmount] = useState(1200000);
     const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
     const [newsLoading, setNewsLoading] = useState(true);
-    const currentAmount = 956610;
+    const [aiRecommendations, setAiRecommendations] = useState<AIRecommendation[]>([]);
+    const [hasUserData, setHasUserData] = useState(false);
+    const [deductionItems, setDeductionItems] = useState<DeductionAnalysis[]>([]);
+    const [hasAdminData, setHasAdminData] = useState(false);
+    const [currentAmount, setCurrentAmount] = useState(0);
+    const [totalPrepaidTax, setTotalPrepaidTax] = useState(0); // 기납부세액 총액 (목표 상한선)
     const goalProgress = Math.min(100, Math.round((currentAmount / goalAmount) * 100));
 
-    const totalPotentialSaving = MOCK_ALERTS.reduce((sum, alert) => {
-        const amount = parseInt(alert.potentialSaving.replace(/[^0-9]/g, "")) * 10000;
-        return sum + amount;
-    }, 0);
+    const totalPotentialSaving = calculateTotalPotentialSaving(aiRecommendations);
+
+    // AI 추천 생성
+    useEffect(() => {
+        const taxData = loadTaxData();
+        if (taxData && taxData.salary > 0) {
+            const recommendations = generateRecommendations(taxData);
+            setAiRecommendations(recommendations);
+            setHasUserData(true);
+        } else {
+            setAiRecommendations(getDefaultRecommendations());
+            setHasUserData(false);
+        }
+    }, []);
+
+    // Admin 데이터로 공제 분석 및 환급액 계산
+    useEffect(() => {
+        // 2026년 우선, 없으면 2025년 데이터 사용
+        let adminData = loadAdminData(2026);
+        if (!adminData) {
+            adminData = loadAdminData(2025);
+        }
+        if (adminData) {
+            const analysis = generateDeductionAnalysis(adminData);
+            setDeductionItems(analysis);
+            setHasAdminData(true);
+
+            // 환급액 계산
+            const salary = adminData.salary.totalSalary - (adminData.salary.mealAllowance || 0);
+
+            // 근로소득공제
+            let incomeDeduction = 0;
+            if (salary <= 5000000) {
+                incomeDeduction = salary * 0.7;
+            } else if (salary <= 15000000) {
+                incomeDeduction = 3500000 + (salary - 5000000) * 0.4;
+            } else if (salary <= 45000000) {
+                incomeDeduction = 7500000 + (salary - 15000000) * 0.15;
+            } else if (salary <= 100000000) {
+                incomeDeduction = 12000000 + (salary - 45000000) * 0.05;
+            } else {
+                incomeDeduction = 14750000 + (salary - 100000000) * 0.02;
+            }
+
+            // 근로소득금액
+            const earnedIncome = salary - incomeDeduction;
+
+            // 인적공제 (본인 1 + 배우자 + 부양가족)
+            const dependents = 1 +
+                (adminData.family?.spouse ? 1 : 0) +
+                (adminData.family?.children || 0) +
+                (adminData.family?.parents || 0) +
+                (adminData.family?.siblings || 0) +
+                (adminData.family?.foster || 0) +
+                (adminData.family?.recipient || 0);
+            const personalDeduction = dependents * 1500000;
+
+            // 신용카드 등 소득공제
+            const minCardSpending = salary * 0.25;
+            const totalCardSpending = (adminData.spending?.creditCard || 0) +
+                (adminData.spending?.debitCard || 0) +
+                (adminData.spending?.cash || 0);
+            let cardDeduction = 0;
+            if (totalCardSpending > minCardSpending) {
+                const excess = totalCardSpending - minCardSpending;
+                const creditExcess = Math.min(adminData.spending?.creditCard || 0, excess);
+                const debitExcess = Math.max(0, excess - creditExcess);
+                cardDeduction = creditExcess * 0.15 + debitExcess * 0.3;
+                cardDeduction = Math.min(cardDeduction, 3000000);
+            }
+
+            // 과세표준
+            let taxableIncome = earnedIncome - personalDeduction - cardDeduction;
+            taxableIncome = Math.max(0, taxableIncome);
+
+            // 산출세액 (2026년 세율)
+            let calculatedTax = 0;
+            if (taxableIncome <= 14000000) {
+                calculatedTax = taxableIncome * 0.06;
+            } else if (taxableIncome <= 50000000) {
+                calculatedTax = 840000 + (taxableIncome - 14000000) * 0.15;
+            } else if (taxableIncome <= 88000000) {
+                calculatedTax = 6240000 + (taxableIncome - 50000000) * 0.24;
+            } else if (taxableIncome <= 150000000) {
+                calculatedTax = 15360000 + (taxableIncome - 88000000) * 0.35;
+            } else if (taxableIncome <= 300000000) {
+                calculatedTax = 37060000 + (taxableIncome - 150000000) * 0.38;
+            } else if (taxableIncome <= 500000000) {
+                calculatedTax = 94060000 + (taxableIncome - 300000000) * 0.4;
+            } else if (taxableIncome <= 1000000000) {
+                calculatedTax = 174060000 + (taxableIncome - 500000000) * 0.42;
+            } else {
+                calculatedTax = 384060000 + (taxableIncome - 1000000000) * 0.45;
+            }
+
+            // 기납부세액 (Admin에서 가져옴)
+            const withheldTax = adminData.salary.prepaidTax || 0;
+            setTotalPrepaidTax(withheldTax); // 기납부세액 저장 (목표 상한선)
+
+            // 환급액 계산
+            const refund = Math.round(withheldTax - calculatedTax);
+            setCurrentAmount(refund);
+
+            // 목표 금액 초기화: 기납부세액의 60% 또는 기본값
+            if (withheldTax > 0) {
+                const initialGoal = Math.min(Math.round(withheldTax * 0.6 / 100000) * 100000, withheldTax);
+                setGoalAmount(initialGoal > 0 ? initialGoal : withheldTax);
+            }
+        } else {
+            // 데이터 없으면 기본 Mock 사용
+            setDeductionItems(MOCK_DEDUCTIONS.map(d => ({
+                id: d.id,
+                category: d.category,
+                type: d.type,
+                amount: d.amount,
+                limit: d.limit,
+                status: d.status,
+            })));
+            setHasAdminData(false);
+            setCurrentAmount(0);
+        }
+    }, []);
 
     // 뉴스 가져오기
     useEffect(() => {
@@ -297,25 +422,39 @@ export default function DashboardPage() {
         <div className="space-y-8 animate-fade-in">
             {/* Summary Card with Goal Setting */}
             <div className="neo-card bg-neo-white relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10">
-                    <TrendingUp size={120} />
-                </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Current Refund */}
-                    <div className="lg:col-span-2">
+                    <div className="lg:col-span-2 relative">
+                        {/* 배경 장식 아이콘 */}
+                        <div className="absolute top-0 right-0 opacity-10 pointer-events-none">
+                            <TrendingUp size={120} />
+                        </div>
                         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                            <span className="w-3 h-3 bg-neo-orange rounded-full"></span>
-                            2026년 예상 환급액
+                            <span className={`w-3 h-3 ${currentAmount >= 0 ? 'bg-neo-orange' : 'bg-red-500'} rounded-full`}></span>
+                            2026년 예상 {currentAmount >= 0 ? '환급액' : '추가납부액'}
                         </h2>
                         <div className="flex flex-col md:flex-row items-end gap-4 mb-4">
-                            <span className="text-5xl md:text-7xl font-black tracking-tighter text-neo-black">
-                                {formatNumber(currentAmount)}
-                                <span className="text-2xl text-gray-500 font-bold ml-1">원</span>
-                            </span>
-                            <div className="neo-badge bg-neo-cyan text-black mb-2">
-                                지난해 대비 +12.3% ▲
-                            </div>
+                            {hasAdminData ? (
+                                <span className={`text-5xl md:text-7xl font-black tracking-tighter ${currentAmount >= 0 ? 'text-neo-black' : 'text-red-600'}`}>
+                                    {currentAmount < 0 ? '-' : ''}{formatNumber(Math.abs(currentAmount))}
+                                    <span className="text-2xl text-gray-500 font-bold ml-1">원</span>
+                                </span>
+                            ) : (
+                                <span className="text-2xl md:text-3xl font-bold text-gray-400">
+                                    기초자료를 먼저 입력해주세요
+                                </span>
+                            )}
+                            {hasAdminData && currentAmount >= 0 && (
+                                <div className="neo-badge bg-neo-cyan text-black mb-2">
+                                    예상 환급
+                                </div>
+                            )}
+                            {hasAdminData && currentAmount < 0 && (
+                                <div className="neo-badge bg-red-400 text-white mb-2">
+                                    추가 납부 예상
+                                </div>
+                            )}
                         </div>
 
                         {/* Progress to Goal */}
@@ -343,9 +482,15 @@ export default function DashboardPage() {
                             환급액 목표 설정
                         </h3>
                         <div className="space-y-3">
+                            {/* 기납부세액 표시 */}
+                            {totalPrepaidTax > 0 && (
+                                <div className="text-xs text-gray-500 font-medium bg-gray-100 px-2 py-1 border border-gray-300">
+                                    최대 환급 가능: <span className="font-bold text-neo-black">{formatNumber(totalPrepaidTax)}원</span>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setGoalAmount(prev => Math.max(500000, prev - 100000))}
+                                    onClick={() => setGoalAmount(prev => Math.max(100000, prev - 100000))}
                                     className="w-10 h-10 border-2 border-black bg-white hover:bg-gray-100 font-bold flex items-center justify-center"
                                 >
                                     <ChevronDown size={20} />
@@ -354,25 +499,38 @@ export default function DashboardPage() {
                                     {formatNumber(goalAmount)}원
                                 </div>
                                 <button
-                                    onClick={() => setGoalAmount(prev => prev + 100000)}
-                                    className="w-10 h-10 border-2 border-black bg-white hover:bg-gray-100 font-bold flex items-center justify-center"
+                                    onClick={() => {
+                                        const maxGoal = totalPrepaidTax > 0 ? totalPrepaidTax : Infinity;
+                                        setGoalAmount(prev => Math.min(prev + 100000, maxGoal));
+                                    }}
+                                    disabled={totalPrepaidTax > 0 && goalAmount >= totalPrepaidTax}
+                                    className={`w-10 h-10 border-2 border-black font-bold flex items-center justify-center ${totalPrepaidTax > 0 && goalAmount >= totalPrepaidTax
+                                        ? "bg-gray-300 cursor-not-allowed"
+                                        : "bg-white hover:bg-gray-100"
+                                        }`}
                                 >
                                     <ChevronUp size={20} />
                                 </button>
                             </div>
                             <div className="grid grid-cols-3 gap-2">
-                                {[800000, 1000000, 1500000].map((amount) => (
-                                    <button
-                                        key={amount}
-                                        onClick={() => setGoalAmount(amount)}
-                                        className={`py-2 border-2 border-black text-sm font-bold transition-all ${goalAmount === amount
-                                            ? "bg-neo-yellow shadow-[2px_2px_0px_0px_#000]"
-                                            : "bg-white hover:bg-gray-100"
-                                            }`}
-                                    >
-                                        {formatNumber(amount)}
-                                    </button>
-                                ))}
+                                {[800000, 1000000, 1500000].map((amount) => {
+                                    const isDisabled = totalPrepaidTax > 0 && amount > totalPrepaidTax;
+                                    return (
+                                        <button
+                                            key={amount}
+                                            onClick={() => !isDisabled && setGoalAmount(amount)}
+                                            disabled={isDisabled}
+                                            className={`py-2 border-2 border-black text-sm font-bold transition-all ${isDisabled
+                                                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                                : goalAmount === amount
+                                                    ? "bg-neo-yellow shadow-[2px_2px_0px_0px_#000]"
+                                                    : "bg-white hover:bg-gray-100"
+                                                }`}
+                                        >
+                                            {formatNumber(amount)}
+                                        </button>
+                                    );
+                                })}
                             </div>
                             <p className="text-xs text-gray-600 font-medium">
                                 AI 추천: 최적화 시 <span className="text-neo-orange font-bold">{formatNumber(currentAmount + totalPotentialSaving)}원</span> 달성 가능
@@ -404,9 +562,18 @@ export default function DashboardPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {MOCK_DEDUCTIONS.map((item, index) => {
-                                const Icon = item.icon;
-                                const utilizationRate = Math.round((item.amount / item.limit) * 100);
+                            {deductionItems.map((item, index) => {
+                                const iconMap: Record<string, React.ElementType> = {
+                                    "신용카드 등 사용금액": CreditCard,
+                                    "주택마련저축": Home,
+                                    "의료비": Heart,
+                                    "교육비": GraduationCap,
+                                    "기부금": Gift,
+                                    "연금저축/IRP": PiggyBank,
+                                    "보험료": Building,
+                                };
+                                const Icon = iconMap[item.category] || CreditCard;
+                                const utilizationRate = item.limit > 0 ? Math.round((item.amount / item.limit) * 100) : 0;
                                 return (
                                     <tr
                                         key={item.id}
@@ -427,8 +594,11 @@ export default function DashboardPage() {
                                                 {item.type}
                                             </span>
                                         </td>
-                                        <td className="text-right py-3 px-2 sm:px-4 font-bold whitespace-nowrap text-sm sm:text-base">
-                                            {formatNumber(item.amount)}원
+                                        <td className="text-right py-3 px-2 sm:px-4 whitespace-nowrap text-sm sm:text-base">
+                                            <div className="font-bold">{formatNumber(Math.round(item.amount))}원</div>
+                                            {item.thresholdInfo && (
+                                                <div className="text-xs text-gray-400 mt-0.5">{item.thresholdInfo}</div>
+                                            )}
                                         </td>
                                         <td className="text-right py-4 px-4 text-gray-500 hidden md:table-cell whitespace-nowrap">
                                             {formatNumber(item.limit)}원
@@ -550,21 +720,44 @@ export default function DashboardPage() {
                         </span>
                     </h3>
                     <div className="space-y-4">
-                        {MOCK_ALERTS.map((alert) => (
-                            <div
-                                key={alert.id}
-                                className="border-2 border-black p-4 hover:translate-x-1 hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_#000] transition-all cursor-pointer bg-white"
-                            >
-                                <div className="flex justify-between items-start mb-2">
-                                    <Badge type={alert.type} />
-                                    <span className="text-lg font-black text-neo-cyan">{alert.potentialSaving}</span>
-                                </div>
-                                <h4 className="font-bold text-lg leading-tight mb-1">
-                                    {alert.message}
-                                </h4>
-                                <p className="text-sm text-gray-600">{alert.detail}</p>
+                        {aiRecommendations.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                                <Lightbulb size={32} className="mx-auto mb-2 text-gray-300" />
+                                <p>계산기에서 데이터를 입력하면 AI 추천을 받을 수 있습니다.</p>
                             </div>
-                        ))}
+                        ) : (
+                            aiRecommendations.map((rec) => (
+                                <div
+                                    key={rec.id}
+                                    className="border-2 border-black p-4 hover:translate-x-1 hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_#000] transition-all cursor-pointer bg-white"
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <Badge type={rec.priority} />
+                                        {rec.potentialSaving > 0 && (
+                                            <span className="text-lg font-black text-neo-cyan">
+                                                +{formatNumber(rec.potentialSaving)}원
+                                            </span>
+                                        )}
+                                    </div>
+                                    <h4 className="font-bold text-lg leading-tight mb-1">
+                                        {rec.message}
+                                    </h4>
+                                    <p className="text-sm text-gray-600">{rec.detail}</p>
+                                    {rec.action && (
+                                        <p className="text-xs text-neo-orange font-bold mt-2">
+                                            💡 {rec.action}
+                                        </p>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                        {!hasUserData && (
+                            <Link href="/calculator">
+                                <button className="w-full py-3 font-bold border-2 border-black bg-neo-yellow hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000] transition-all">
+                                    계산기로 이동 →
+                                </button>
+                            </Link>
+                        )}
                     </div>
                 </div>
 

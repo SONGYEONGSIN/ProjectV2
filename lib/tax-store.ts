@@ -31,6 +31,8 @@ export interface AdminData {
         };
         // 연간 합계 (계산기로 전달용)
         totalSalary: number;       // 총급여 (세전)
+        bonus: number;             // 상여금 (연간)
+        childTuition: number;      // 자녀학자금 (연간)
         mealAllowance: number;     // 비과세 식대 (연간)
         childrenUnder6: number;    // 6세 이하 자녀 수 (보육수당)
         nationalPension: number;   // 국민연금

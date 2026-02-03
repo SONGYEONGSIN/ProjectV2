@@ -2,14 +2,14 @@
   "pages": {
     "/admin/page": [
       "static/chunks/[root-of-the-server]__264467fa._.css",
-      "static/chunks/node_modules_6645f1f3._.js",
+      "static/chunks/node_modules_313f10dd._.js",
       "static/chunks/components_04e8464b._.js",
       "static/chunks/app_layout_tsx_0a548d63._.js",
-      "static/chunks/node_modules_next_dist_client_components_builtin_global-error_8bdc2861.js",
+      "static/chunks/node_modules_next_dist_client_components_builtin_global-error_66c02962.js",
       "static/chunks/_80421998._.js",
       "static/chunks/node_modules_xlsx_xlsx_mjs_fef98e92._.js",
-      "static/chunks/node_modules_68ad45b8._.js",
-      "static/chunks/app_admin_page_tsx_8bdc2861._.js",
+      "static/chunks/node_modules_8d22e1ec._.js",
+      "static/chunks/app_admin_page_tsx_66c02962._.js",
       "static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_57d40746._.js",
       "static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js",
       "static/chunks/node_modules_next_dist_compiled_next-devtools_index_a9cb0712.js",

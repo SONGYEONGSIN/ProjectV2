@@ -84,7 +84,7 @@ function calculateTax(inputs: FormInputs) {
     const creditExcess = Math.max(0, inputs.creditCard - cardRemaining);
     cardRemaining = Math.max(0, cardRemaining - inputs.creditCard);
 
-    // 2. 체크카드
+    // 2. 직불카드
     const debitExcess = Math.max(0, inputs.debitCard - cardRemaining);
     cardRemaining = Math.max(0, cardRemaining - inputs.debitCard);
 
@@ -103,7 +103,7 @@ function calculateTax(inputs: FormInputs) {
     // 6. 문화체육
     const cultureExcess = Math.max(0, inputs.culture - cardRemaining);
 
-    // 기본 공제 (신용카드, 체크카드, 현금영수증) - 초과분에만 공제율 적용
+    // 기본 공제 (신용카드, 직불카드, 현금영수증) - 초과분에만 공제율 적용
     const creditDeduction = Math.round(creditExcess * 0.15);
     const debitDeduction = Math.round(debitExcess * 0.30);
     const cashDeduction = Math.round(cashExcess * 0.30);
@@ -427,7 +427,7 @@ interface FormInputs {
     // 카드 사용액
     cardChildren: number;        // 카드 소득공제 자녀 수 (한도 확대용)
     creditCard: number;          // 신용카드
-    debitCard: number;           // 체크카드
+    debitCard: number;           // 직불카드
     cash: number;                // 현금영수증
     traditionalMarket: number;   // 전통시장
     publicTransport: number;     // 대중교통
@@ -582,7 +582,7 @@ export default function CalculatorPage() {
         // 카드 사용액
         cardChildren: 0,             // 카드 소득공제 자녀 수
         creditCard: 15241850,        // 신용카드
-        debitCard: 11036540,         // 체크카드
+        debitCard: 11036540,         // 직불카드
         cash: 6162286,               // 현금영수증
         traditionalMarket: 1984300,  // 전통시장
         publicTransport: 1358970,    // 대중교통
@@ -723,18 +723,30 @@ export default function CalculatorPage() {
 
         const adminData = loadAdminData(2026); // 2026년 기준
         console.log("[DEBUG] Admin data loaded:", adminData);
+        console.log("[DEBUG] Salary data:", adminData?.salary);
+        console.log("[DEBUG] totalSalary:", adminData?.salary?.totalSalary);
+        console.log("[DEBUG] bonus:", adminData?.salary?.bonus);
+        console.log("[DEBUG] childTuition:", adminData?.salary?.childTuition);
         console.log("[DEBUG] Family data:", adminData?.family);
         console.log("[DEBUG] childrenOver8:", adminData?.family?.childrenOver8);
         console.log("[DEBUG] birthAdoption:", adminData?.family?.birthAdoption);
         if (adminData) {
             // Admin 데이터를 Calculator inputs에 매핑
+            // 연봉 = 급여 + 상여 + 자녀학자금
+            const annualSalary = adminData.salary.totalSalary +
+                (adminData.salary.bonus || 0) +
+                (adminData.salary.childTuition || 0);
+            // 보육수당 비과세 = 6세 이하 자녀 수 × 20만원 × 12개월
+            const childcareAllowance = (adminData.salary.childrenUnder6 || 0) * 200000 * 12;
+            // 총 비과세 = 식대 + 보육수당
+            const totalNonTaxable = (adminData.salary.mealAllowance || 0) + childcareAllowance;
             setInputs(prev => ({
                 ...prev,
                 // 급여 정보
-                annualSalary: adminData.salary.totalSalary,
+                annualSalary: annualSalary,
                 mealAllowance: adminData.salary.mealAllowance || 0,
                 childrenUnder6: adminData.salary.childrenUnder6 || 0,
-                salary: adminData.salary.totalSalary - (adminData.salary.mealAllowance || 0),
+                salary: annualSalary - totalNonTaxable,  // 연봉 - 총 비과세
                 withheldTax: adminData.salary.prepaidTax || 0,  // 기납부세액 (소득세)
                 localIncomeTax: adminData.salary.localIncomeTax || 0,  // 기납부세액 (지방소득세)
                 nationalPension: adminData.salary.nationalPension,
@@ -755,6 +767,13 @@ export default function CalculatorPage() {
                 siblings: adminData.family?.siblings || 0,
                 foster: adminData.family?.foster || 0,
                 recipient: adminData.family?.recipient || 0,
+                // 총 부양가족 수 = 본인 1 + 배우자 + 자녀 + 직계존속 + 형제자매 + 위탁아동 + 수급자
+                dependents: 1 + (adminData.family?.spouse ? 1 : 0) +
+                    (adminData.family?.children || 0) +
+                    (adminData.family?.parents || 0) +
+                    (adminData.family?.siblings || 0) +
+                    (adminData.family?.foster || 0) +
+                    (adminData.family?.recipient || 0),
                 cardChildren: adminData.family?.children || 0,  // 카드공제 한도 확대용
                 // 자녀공제 (세액공제)
                 childrenOver8: adminData.family?.childrenOver8 || 0,
@@ -837,8 +856,8 @@ export default function CalculatorPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in">
             {/* Input Section */}
             <div className="lg:col-span-2 space-y-4">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-2xl font-black">공제정보 상세 입력</h2>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl md:text-3xl font-black uppercase">계산기</h2>
                     <div className="flex gap-2">
                         <button
                             onClick={handleLoadData}
@@ -847,7 +866,7 @@ export default function CalculatorPage() {
                                 isLoadingData ? "bg-neo-cyan translate-x-[4px] translate-y-[4px] shadow-none" : "bg-white"
                             )}
                         >
-                            <Download size={14} className={isLoadingData ? "animate-bounce" : ""} /> 기초자료 가져오기
+                            <Download size={14} className={isLoadingData ? "animate-bounce" : ""} /> 기초자료 동기화
                         </button>
                         <button
                             onClick={handleReset}
@@ -1239,7 +1258,7 @@ export default function CalculatorPage() {
                                             <>
                                                 {/* 기본 카드 사용액 */}
                                                 <div className="space-y-4">
-                                                    <h4 className="font-black text-sm border-b-2 border-black pb-2">💳 신용카드·체크카드·현금영수증</h4>
+                                                    <h4 className="font-black text-sm border-b-2 border-black pb-2">💳 신용카드·직불카드·현금영수증</h4>
                                                     <div className="grid grid-cols-1 gap-4">
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
@@ -1278,7 +1297,7 @@ export default function CalculatorPage() {
                                                         </div>
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
-                                                                체크카드 (원)
+                                                                직불카드 (원)
                                                                 <Tooltip content="공제율 30%">
                                                                     <Info size={14} className="text-gray-400 cursor-help" />
                                                                 </Tooltip>
@@ -1404,7 +1423,7 @@ export default function CalculatorPage() {
                                                             const marketDeduction = Math.round(marketExcess * 0.4);
                                                             const cultureDeduction = Math.round(cultureExcess * 0.3);
 
-                                                            // 기본 공제 합계 (신용카드, 체크카드, 현금영수증)
+                                                            // 기본 공제 합계 (신용카드, 직불카드, 현금영수증)
                                                             const basicDeduction = creditDeduction + debitDeduction + cashDeduction;
                                                             const basicLimit = (inputs.salary <= 70000000 ? 3000000 : inputs.salary <= 120000000 ? 2500000 : 2000000) + Math.min(inputs.cardChildren * 500000, 1000000);
                                                             const finalBasic = Math.min(basicDeduction, basicLimit);
@@ -1425,7 +1444,7 @@ export default function CalculatorPage() {
                                                                         <p>① 신용카드: {formatNumber(inputs.creditCard)}원 중 {formatNumber(creditUsed)}원 소진 → <span className="font-bold text-blue-600">초과 {formatNumber(creditExcess)}원 × 15% = {formatNumber(creditDeduction)}원</span></p>
                                                                     )}
                                                                     {inputs.debitCard > 0 && (
-                                                                        <p>② 체크카드: {formatNumber(inputs.debitCard)}원 중 {formatNumber(debitUsed)}원 소진 → <span className="font-bold text-blue-600">초과 {formatNumber(debitExcess)}원 × 30% = {formatNumber(debitDeduction)}원</span></p>
+                                                                        <p>② 직불카드: {formatNumber(inputs.debitCard)}원 중 {formatNumber(debitUsed)}원 소진 → <span className="font-bold text-blue-600">초과 {formatNumber(debitExcess)}원 × 30% = {formatNumber(debitDeduction)}원</span></p>
                                                                     )}
                                                                     {inputs.cash > 0 && (
                                                                         <p>③ 현금영수증: {formatNumber(inputs.cash)}원 중 {formatNumber(cashUsed)}원 소진 → <span className="font-bold text-blue-600">초과 {formatNumber(cashExcess)}원 × 30% = {formatNumber(cashDeduction)}원</span></p>
@@ -1441,7 +1460,7 @@ export default function CalculatorPage() {
                                                                     )}
 
                                                                     {/* 기본 공제 한도 */}
-                                                                    <p className="font-semibold border-t border-black pt-1 mt-2">▸ 기본 공제 (신용카드·체크카드·현금영수증)</p>
+                                                                    <p className="font-semibold border-t border-black pt-1 mt-2">▸ 기본 공제 (신용카드·직불카드·현금영수증)</p>
                                                                     <p className="text-gray-700">
                                                                         공제액: {formatNumber(basicDeduction)}원 / 한도: {formatNumber(basicLimit)}원 → <span className="font-bold">{formatNumber(finalBasic)}원</span>
                                                                     </p>

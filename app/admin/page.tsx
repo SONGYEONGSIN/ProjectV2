@@ -13,6 +13,7 @@ import {
     AlertCircle,
     Users,
     Upload,
+    Eye,
 } from "lucide-react";
 import clsx from "clsx";
 import * as XLSX from "xlsx";
@@ -37,11 +38,18 @@ interface Notification {
     message: string;
 }
 
+interface TransactionDetail {
+    date: string;
+    merchant: string;
+    amount: number;
+}
+
 interface SpendingItem {
     id: string;
     name: string;
     amount: string;
     month: number; // 1~12월
+    details?: TransactionDetail[]; // 엑셀에서 파싱된 세부 거래 내역
 }
 
 export default function AdminPage() {
@@ -79,11 +87,21 @@ export default function AdminPage() {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const ocrImageInputRef = useRef<HTMLInputElement>(null);
+    const cardExcelInputRef = useRef<HTMLInputElement>(null);
+
+    // 카드사 엑셀 업로드 상태
+    const [showCardExcelModal, setShowCardExcelModal] = useState(false);
+    const [cardExcelFile, setCardExcelFile] = useState<File | null>(null);
+    const [isCardExcelDragging, setIsCardExcelDragging] = useState(false);
+    const [cardType, setCardType] = useState<"credit" | "debit" | "cash">("credit");
+    const [cardExcelPreview, setCardExcelPreview] = useState<{ date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "excluded" }[]>([]);
+    const [excludedCount, setExcludedCount] = useState(0);
 
     // 지출 항목 상태
+    const [selectedSpendingMonth, setSelectedSpendingMonth] = useState(1); // 지출 데이터 월 선택
     const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([
         { id: "1", name: "신용카드", amount: "1,234,567", month: 1 },
-        { id: "2", name: "체크카드", amount: "456,789", month: 1 },
+        { id: "2", name: "직불카드", amount: "456,789", month: 1 },
         { id: "3", name: "현금영수증", amount: "50,000", month: 1 },
         { id: "4", name: "대중교통", amount: "80,000", month: 1 },
     ]);
@@ -91,6 +109,10 @@ export default function AdminPage() {
     const [newItemName, setNewItemName] = useState("");
     const [newItemAmount, setNewItemAmount] = useState("");
     const [newItemMonth, setNewItemMonth] = useState(1); // 신규 항목 월 선택
+
+    // 세부 내역 모달 상태
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [selectedItemDetails, setSelectedItemDetails] = useState<SpendingItem | null>(null);
 
     // 가족정보 상태 (기본공제 - 본인 제외)
     const [familyData, setFamilyData] = useState({
@@ -197,6 +219,8 @@ export default function AdminPage() {
                 healthInsurance: "0",
                 longTermCare: "0",
                 employmentInsurance: "0",
+                bonus: "0",
+                childTuition: "0",
                 prepaidTax: "0",
                 localIncomeTax: "0",
             };
@@ -241,7 +265,8 @@ export default function AdminPage() {
 
     // 데이터 저장 함수
     const handleSave = () => {
-        const parseAmount = (str: string): number => {
+        const parseAmount = (str: string | undefined | null): number => {
+            if (!str) return 0;
             return parseInt(str.replace(/[^0-9]/g, "")) || 0;
         };
 
@@ -258,6 +283,8 @@ export default function AdminPage() {
                 childrenUnder6: familyData.childrenUnder6 || 0,
                 // 연간 합계 (계산기로 전달용)
                 totalSalary: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.totalSalary), 0),
+                bonus: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.bonus), 0),
+                childTuition: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.childTuition), 0),
                 mealAllowance: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.mealAllowance), 0),
                 nationalPension: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.nationalPension), 0),
                 healthInsurance: Object.values(monthlySalary).reduce((sum, m) => sum + parseAmount(m.healthInsurance), 0),
@@ -431,6 +458,483 @@ export default function AdminPage() {
         }
     };
 
+    // 완전 제외 키워드 목록 (소득공제 불가 - 어디에도 포함 안됨)
+    const EXCLUDED_KEYWORDS = [
+        // 세금·공과금
+        "국세", "지방세", "전기요금", "수도요금", "가스요금", "아파트관리비", "관리비", "도로통행료", "하이패스", "통행료",
+        "지자체세입금", "자동차세", "재산세", "주민세", "도시가스", "한국전력", "한전",
+        // 통신비
+        "휴대전화", "휴대폰", "핸드폰", "인터넷", "SKT", "KT", "LG U+", "LGU+", "통신", "에스케이텔레콤", "케이티",
+        // 자동차
+        "신차", "자동차리스", "리스료", "렌트료"
+    ];
+
+    // 대중교통 키워드 (카드 사용금액에서 제외, 대중교통 항목으로 별도 집계)
+    const PUBLIC_TRANSPORT_KEYWORDS = [
+        "버스", "지하철", "모바일이즐", "모바일이즐페이", "후불교통", "교통카드", "티머니", "캐시비"
+    ];
+
+    // 보험료 키워드 (카드 사용금액에서 제외, 보험료 항목으로 별도 집계)
+    const INSURANCE_KEYWORDS = [
+        "보험", "메리츠화재", "DB손해보험", "삼성화재", "현대해상", "KB손해보험", "한화손해보험",
+        "국민연금", "건강보험"
+    ];
+
+    // 의료비 키워드 (카드 사용금액에서 제외, 의료비 항목으로 별도 집계)
+    const MEDICAL_KEYWORDS = [
+        // 병원/의원
+        "병원", "의원", "클리닉", "clinic", "hospital", "메디컬", "medical",
+        // 약국
+        "약국", "pharmacy", "팜",
+        // 치과
+        "치과", "dental", "dentist",
+        // 한의원
+        "한의원", "한방",
+        // 안과/이비인후과 등
+        "안과", "이비인후과", "피부과", "정형외과", "내과", "외과", "소아과", "산부인과", "비뇨기과",
+        // 건강검진센터
+        "건강검진", "검진센터"
+    ];
+
+    // 카드사 엑셀 파싱 함수
+    const processCardExcelFile = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: "array" });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as (string | number)[][];
+
+                console.log("Excel data rows:", jsonData.length);
+                console.log("First row (header):", jsonData[0]);
+                console.log("Second row (data sample):", jsonData[1]);
+
+                if (jsonData.length < 2) {
+                    showNotification("error", "엑셀 파일에 데이터가 없습니다.");
+                    return;
+                }
+
+                // 헤더 행 찾기 (첫 번째 행 또는 데이터가 시작되는 행)
+                let headerRowIndex = 0;
+                const firstRow = jsonData[0] || [];
+
+                // 헤더에 관련 키워드가 있는지 확인
+                const firstRowStr = firstRow.map(h => String(h || "").toLowerCase()).join(" ");
+                if (!firstRowStr.includes("승인") && !firstRowStr.includes("금액") && !firstRowStr.includes("가맹점")) {
+                    // 첫 행이 헤더가 아닐 수 있음, 두번째 행 확인
+                    if (jsonData.length > 1) {
+                        const secondRowStr = (jsonData[1] || []).map(h => String(h || "").toLowerCase()).join(" ");
+                        if (secondRowStr.includes("승인") || secondRowStr.includes("금액") || secondRowStr.includes("가맹점")) {
+                            headerRowIndex = 1;
+                        }
+                    }
+                }
+
+                const headerRow = jsonData[headerRowIndex] || [];
+                const headers = headerRow.map(h => String(h || "").toLowerCase());
+                console.log("Detected header row index:", headerRowIndex);
+                console.log("Headers:", headers);
+
+                // 열 인덱스 찾기 (카드사마다 열 순서가 다를 수 있음)
+                // 날짜 열: 다양한 패턴 지원
+                let dateCol = headers.findIndex(h =>
+                    h.includes("승인일") || h.includes("이용일") || h.includes("거래일") ||
+                    h.includes("결제일") || h.includes("매출일") || h.includes("일자") ||
+                    h.includes("date") || h.includes("날짜")
+                );
+
+                // 가맹점 열: 다양한 패턴 지원
+                let merchantCol = headers.findIndex(h =>
+                    h.includes("가맹점") || h.includes("상호") || h.includes("이용처") ||
+                    h.includes("merchant") || h.includes("매장") || h.includes("사업자") ||
+                    h.includes("업체") || h.includes("결제처") || h.includes("사용처")
+                );
+
+                // 금액 열: 다양한 패턴 지원
+                let amountCol = headers.findIndex(h =>
+                    h.includes("금액") || h.includes("결제금액") || h.includes("이용금액") ||
+                    h.includes("승인금액") || h.includes("amount") || h.includes("원")
+                );
+
+                // 취소 열: 다양한 패턴 지원
+                let cancelCol = headers.findIndex(h =>
+                    h.includes("취소") || h.includes("cancel") || h.includes("상태") ||
+                    h.includes("비고") || h.includes("구분")
+                );
+
+                // 승인번호 열
+                let approvalCol = headers.findIndex(h =>
+                    h.includes("승인번호") || h.includes("승인no") || h.includes("approval") ||
+                    h.includes("거래번호") || h.includes("전표번호")
+                );
+
+                console.log("Detected columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol, "cancel:", cancelCol, "approval:", approvalCol);
+
+                // 열을 찾지 못한 경우 스마트 추론
+                if (dateCol === -1 || merchantCol === -1 || amountCol === -1) {
+                    // 데이터 행을 분석하여 열 타입 추론
+                    const sampleRows = jsonData.slice(headerRowIndex + 1, headerRowIndex + 10);
+
+                    for (let colIdx = 0; colIdx < (jsonData[headerRowIndex + 1]?.length || 0); colIdx++) {
+                        const sampleValues = sampleRows.map(row => row?.[colIdx]).filter(v => v != null);
+
+                        // 날짜 형식 감지 (YYYY-MM-DD, YYYY.MM.DD, YYYYMMDD 등)
+                        if (dateCol === -1) {
+                            const datePattern = /^\d{4}[-./]?\d{2}[-./]?\d{2}/;
+                            const isDateCol = sampleValues.some(v => datePattern.test(String(v)));
+                            if (isDateCol) dateCol = colIdx;
+                        }
+
+                        // 금액 열 감지 (숫자만 있거나 원 단위)
+                        if (amountCol === -1) {
+                            const numPattern = /^-?\d{1,3}(,\d{3})*$/;
+                            const isAmountCol = sampleValues.every(v => {
+                                const cleanVal = String(v).replace(/[^0-9,-]/g, "");
+                                return numPattern.test(cleanVal) || !isNaN(Number(v));
+                            });
+                            if (isAmountCol && sampleValues.length > 0) {
+                                const avgLen = sampleValues.reduce((sum: number, v) => sum + String(v).length, 0) / sampleValues.length;
+                                if (avgLen >= 4) amountCol = colIdx; // 최소 4자리 이상 (1000원 이상)
+                            }
+                        }
+
+                        // 가맹점명 열 감지 (한글 포함, 긴 텍스트)
+                        if (merchantCol === -1) {
+                            const koreanPattern = /[가-힣]/;
+                            const isMerchantCol = sampleValues.every(v => {
+                                const str = String(v);
+                                return koreanPattern.test(str) && str.length >= 2;
+                            });
+                            if (isMerchantCol && colIdx !== dateCol && colIdx !== amountCol) {
+                                merchantCol = colIdx;
+                            }
+                        }
+                    }
+                }
+
+                // 여전히 찾지 못한 경우 기본값 사용
+                if (dateCol === -1) dateCol = 2;
+                if (merchantCol === -1) merchantCol = 4;
+                if (amountCol === -1) amountCol = 5;
+                if (cancelCol === -1) cancelCol = 9;
+                if (approvalCol === -1) approvalCol = 8;
+
+                console.log("Final columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol);
+
+
+                // 취소된 거래의 승인번호 수집
+                const cancelledApprovals = new Set<string>();
+                const CANCEL_KEYWORDS = [
+                    "취소", "전체취소", "부분취소", "cancel", "cancelled", "void", "refund",
+                    "환불", "반품", "취소승인", "매입취소", "승인취소", "카드취소"
+                ];
+
+                // 1차: 취소 열 기반으로 취소 거래 수집
+                jsonData.slice(headerRowIndex + 1).forEach(row => {
+                    if (!row) return;
+                    const cancelValue = row[cancelCol];
+                    const approvalNum = String(row[approvalCol] || "");
+
+                    // 취소여부 열에 "취소" 관련 키워드가 포함된 경우
+                    const cancelStr = String(cancelValue || "").trim().toLowerCase();
+                    const isCancelled = CANCEL_KEYWORDS.some(keyword => cancelStr.includes(keyword));
+
+                    if (isCancelled && approvalNum) {
+                        cancelledApprovals.add(approvalNum);
+                    }
+                });
+
+                // 2차: 가맹점명에 취소 키워드가 있는 경우도 수집
+                jsonData.slice(headerRowIndex + 1).forEach(row => {
+                    if (!row) return;
+                    const merchant = String(row[merchantCol] || "").toLowerCase();
+                    const approvalNum = String(row[approvalCol] || "");
+
+                    // 가맹점명에 취소 관련 키워드가 있으면 취소로 처리
+                    const hasCancelKeyword = CANCEL_KEYWORDS.some(keyword => merchant.includes(keyword));
+                    if (hasCancelKeyword && approvalNum) {
+                        cancelledApprovals.add(approvalNum);
+                    }
+                });
+
+                console.log("Cancelled approvals:", cancelledApprovals.size);
+
+                // 데이터 파싱 및 필터링
+                const parsedData: { date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "excluded", approvalNum: string }[] = [];
+                let excludedCnt = 0;
+                let skippedCnt = 0;
+
+                jsonData.slice(headerRowIndex + 1).forEach((row, idx) => {
+                    if (!row || row.length < 3) {
+                        skippedCnt++;
+                        return;
+                    }
+
+                    const date = String(row[dateCol] || "");
+                    const merchant = String(row[merchantCol] || "");
+                    const amountRaw = row[amountCol];
+
+                    // 합계/소계 행 스킵 (엑셀 파일 하단의 총합계 행 제외)
+                    const SUMMARY_KEYWORDS = ["총", "합계", "소계", "total", "sum", "subtotal", "건"];
+                    const merchantLowerForSummary = merchant.toLowerCase();
+                    const dateLowerForSummary = date.toLowerCase();
+
+                    const isSummaryRow = SUMMARY_KEYWORDS.some(keyword =>
+                        merchantLowerForSummary.includes(keyword) || dateLowerForSummary.includes(keyword)
+                    );
+
+                    if (isSummaryRow) {
+                        console.log("📊 합계 행 제외:", merchant, date);
+                        skippedCnt++;
+                        return;
+                    }
+
+                    // 금액 파싱 개선 - 다양한 형식 지원
+                    let amount = 0;
+                    let isNegativeAmount = false;
+                    if (typeof amountRaw === "number") {
+                        isNegativeAmount = amountRaw < 0;
+                        amount = Math.abs(amountRaw);
+                    } else if (amountRaw) {
+                        const amountStr = String(amountRaw);
+                        isNegativeAmount = amountStr.includes("-") || amountStr.includes("(");
+                        const cleanedAmount = amountStr.replace(/[^0-9.-]/g, "");
+                        amount = Math.abs(parseInt(cleanedAmount) || 0);
+                    }
+
+                    const approvalNum = String(row[approvalCol] || "");
+
+                    // 빈 행 스킵
+                    if (!date && !merchant && amount === 0) {
+                        skippedCnt++;
+                        return;
+                    }
+
+                    // 금액이 0이면 스킵
+                    if (amount === 0) {
+                        skippedCnt++;
+                        return;
+                    }
+
+                    // 취소된 승인번호면 스킵
+                    if (approvalNum && cancelledApprovals.has(approvalNum)) {
+                        excludedCnt++;
+                        console.log("❌ 취소 거래 제외 (승인번호):", merchant, approvalNum);
+                        return;
+                    }
+
+                    // 음수 금액이면 취소로 간주하여 스킵
+                    if (isNegativeAmount) {
+                        excludedCnt++;
+                        console.log("❌ 취소 거래 제외 (음수금액):", merchant);
+                        return;
+                    }
+
+                    // 가맹점명에 취소 키워드가 있으면 스킵
+                    const hasCancelInMerchant = CANCEL_KEYWORDS.some(keyword =>
+                        merchant.toLowerCase().includes(keyword)
+                    );
+                    if (hasCancelInMerchant) {
+                        excludedCnt++;
+                        console.log("❌ 취소 거래 제외 (가맹점명):", merchant);
+                        return;
+                    }
+
+                    // 카테고리 분류
+                    const merchantLower = merchant.toLowerCase();
+
+                    // 대중교통 체크
+                    const isTransport = PUBLIC_TRANSPORT_KEYWORDS.some(keyword =>
+                        merchantLower.includes(keyword.toLowerCase())
+                    );
+
+                    // 보험료 체크
+                    const isInsurance = INSURANCE_KEYWORDS.some(keyword =>
+                        merchantLower.includes(keyword.toLowerCase())
+                    );
+
+                    // 의료비 체크 (약국, 병원, 의원 등)
+                    const isMedical = MEDICAL_KEYWORDS.some(keyword =>
+                        merchantLower.includes(keyword.toLowerCase())
+                    );
+
+                    // 디버깅: 의료비 감지 로그
+                    if (isMedical) {
+                        console.log("🏥 의료비 감지:", merchant, "-> medical");
+                    }
+
+                    // 제외 키워드 체크 (세금, 공과금, 통신비 등)
+                    const isExcluded = EXCLUDED_KEYWORDS.some(keyword =>
+                        merchantLower.includes(keyword.toLowerCase())
+                    );
+
+                    if (isExcluded) excludedCnt++;
+
+                    // 카테고리 결정 (우선순위: 제외 > 대중교통 > 보험 > 의료비 > 카드)
+                    let category: "card" | "transport" | "insurance" | "medical" | "excluded" = "card";
+                    if (isExcluded) category = "excluded";
+                    else if (isTransport) category = "transport";
+                    else if (isInsurance) category = "insurance";
+                    else if (isMedical) category = "medical";
+
+                    console.log("분류 결과:", merchant, "->", category);
+
+
+                    parsedData.push({
+                        date,
+                        merchant,
+                        amount,
+                        excluded: isExcluded,
+                        category,
+                        approvalNum
+                    });
+                });
+
+                console.log("Parsed data count:", parsedData.length, "Excluded:", excludedCnt, "Skipped:", skippedCnt);
+
+                if (parsedData.length === 0) {
+                    showNotification("error", `파싱된 데이터가 없습니다. (스킵: ${skippedCnt}건, 제외: ${excludedCnt}건)`);
+                } else {
+                    showNotification("success", `${parsedData.length}건의 거래 데이터를 찾았습니다.`);
+                }
+
+                setCardExcelPreview(parsedData.slice(0, 50)); // 미리보기 50개
+                setExcludedCount(excludedCnt);
+
+            } catch (error) {
+                console.error("Excel parsing error:", error);
+                showNotification("error", "엑셀 파일을 읽는 중 오류가 발생했습니다.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    // 카드사 엑셀 업로드 핸들러
+    const handleCardExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setCardExcelFile(file);
+        processCardExcelFile(file);
+    };
+
+    const handleCardExcelDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsCardExcelDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+            setCardExcelFile(file);
+            processCardExcelFile(file);
+        }
+    };
+
+    const handleCardExcelModalOpen = () => {
+        setShowCardExcelModal(true);
+        setCardExcelFile(null);
+        setCardExcelPreview([]);
+        setExcludedCount(0);
+        setCardType("credit");
+    };
+
+    const handleCardExcelModalClose = () => {
+        setShowCardExcelModal(false);
+        setCardExcelFile(null);
+        setCardExcelPreview([]);
+        if (cardExcelInputRef.current) {
+            cardExcelInputRef.current.value = "";
+        }
+    };
+
+    const handleCardExcelApply = () => {
+        if (!cardExcelFile || cardExcelPreview.length === 0) return;
+
+        // 카테고리별 금액 합계 계산
+        const cardAmount = cardExcelPreview
+            .filter(item => item.category === "card")
+            .reduce((sum, item) => sum + item.amount, 0);
+
+        const transportAmount = cardExcelPreview
+            .filter(item => item.category === "transport")
+            .reduce((sum, item) => sum + item.amount, 0);
+
+        const insuranceAmount = cardExcelPreview
+            .filter(item => item.category === "insurance")
+            .reduce((sum, item) => sum + item.amount, 0);
+
+        const medicalAmount = cardExcelPreview
+            .filter(item => item.category === "medical")
+            .reduce((sum, item) => sum + item.amount, 0);
+
+        // 카테고리별 세부 내역 추출
+        const cardDetails: TransactionDetail[] = cardExcelPreview
+            .filter(item => item.category === "card")
+            .map(item => ({ date: item.date, merchant: item.merchant, amount: item.amount }));
+
+        const transportDetails: TransactionDetail[] = cardExcelPreview
+            .filter(item => item.category === "transport")
+            .map(item => ({ date: item.date, merchant: item.merchant, amount: item.amount }));
+
+        const insuranceDetails: TransactionDetail[] = cardExcelPreview
+            .filter(item => item.category === "insurance")
+            .map(item => ({ date: item.date, merchant: item.merchant, amount: item.amount }));
+
+        const medicalDetails: TransactionDetail[] = cardExcelPreview
+            .filter(item => item.category === "medical")
+            .map(item => ({ date: item.date, merchant: item.merchant, amount: item.amount }));
+
+        // 카드 타입에 따른 이름
+        const cardName = cardType === "credit" ? "신용카드" : cardType === "debit" ? "직불카드" : "현금영수증";
+
+        // 항목 추가 헬퍼 함수 (세부 내역 포함)
+        const addOrUpdateItem = (name: string, amount: number, details: TransactionDetail[]) => {
+            if (amount <= 0) return;
+
+            setSpendingItems(prev => {
+                // 같은 월, 같은 이름의 항목 찾기
+                const existingIndex = prev.findIndex(item => item.name === name && item.month === selectedSpendingMonth);
+                if (existingIndex >= 0) {
+                    const currentAmount = parseInt(prev[existingIndex].amount.replace(/[^0-9]/g, "") || "0");
+                    const newAmount = currentAmount + amount;
+                    const existingDetails = prev[existingIndex].details || [];
+                    return prev.map((item, index) =>
+                        index === existingIndex
+                            ? {
+                                ...item,
+                                amount: newAmount.toLocaleString("ko-KR"),
+                                details: [...existingDetails, ...details]
+                            }
+                            : item
+                    );
+                } else {
+                    return [...prev, {
+                        id: Date.now().toString() + name + selectedSpendingMonth,
+                        name,
+                        amount: amount.toLocaleString("ko-KR"),
+                        month: selectedSpendingMonth,
+                        details
+                    }];
+                }
+            });
+        };
+
+        // 각 카테고리별로 항목 추가 (세부 내역 포함)
+        addOrUpdateItem(cardName, cardAmount, cardDetails);
+        addOrUpdateItem("대중교통", transportAmount, transportDetails);
+        addOrUpdateItem("보험료", insuranceAmount, insuranceDetails);
+        addOrUpdateItem("의료비", medicalAmount, medicalDetails);
+
+        // 결과 메시지
+        const messages = [];
+        if (cardAmount > 0) messages.push(`${cardName} ${cardAmount.toLocaleString("ko-KR")}원`);
+        if (transportAmount > 0) messages.push(`대중교통 ${transportAmount.toLocaleString("ko-KR")}원`);
+        if (insuranceAmount > 0) messages.push(`보험료 ${insuranceAmount.toLocaleString("ko-KR")}원`);
+        if (medicalAmount > 0) messages.push(`의료비 ${medicalAmount.toLocaleString("ko-KR")}원`);
+
+        showNotification("success", `${messages.join(", ")} 추가됨 (제외: ${excludedCount}건)`);
+        handleCardExcelModalClose();
+    };
+
     // OCR Image Upload Functions
     const processImageFiles = (files: FileList | null) => {
         if (!files) return;
@@ -516,7 +1020,7 @@ export default function AdminPage() {
     };
 
     return (
-        <div className="max-w-4xl mx-auto animate-fade-in">
+        <div className="max-w-4xl mx-auto animate-fade-in pb-40 md:pb-0">
             {/* Hidden file input for Excel upload */}
             <input
                 ref={fileInputRef}
@@ -628,14 +1132,9 @@ export default function AdminPage() {
             {/* OCR Image Upload Modal */}
             {showCameraModal && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
-                    <div className="bg-white border-[3px] border-black p-4 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000] max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-4">
-                            <div>
-                                <h3 className="text-lg font-black flex items-center gap-2">
-                                    <Upload size={20} /> 이미지 업로드 (OCR)
-                                </h3>
-                                <p className="text-sm text-gray-500">최대 10개까지 업로드 가능</p>
-                            </div>
+                    <div className="bg-white border-[3px] border-black p-6 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000] max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b-2 border-black">
+                            <h3 className="text-xl font-black">이미지 업로드</h3>
                             <button
                                 onClick={() => handleButtonClick("ocrModalClose", handleOcrModalClose)}
                                 className={clsx(
@@ -649,24 +1148,10 @@ export default function AdminPage() {
                             </button>
                         </div>
 
-                        {/* 월 선택 */}
-                        <div className="mb-4">
-                            <label className="block font-bold mb-2">적용할 월 선택</label>
-                            <select
-                                className="neo-input"
-                                value={ocrModalMonth}
-                                onChange={(e) => setOcrModalMonth(parseInt(e.target.value))}
-                            >
-                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
-                                    <option key={m} value={m}>{m}월</option>
-                                ))}
-                            </select>
-                        </div>
-
                         {/* 드래그앤드롭 영역 */}
                         <div
                             className={clsx(
-                                "min-h-[200px] mb-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all",
+                                "min-h-[200px] mb-6 border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all",
                                 isDragging ? "border-neo-cyan bg-neo-cyan/20 scale-[1.02]" : "border-gray-400 bg-gray-50 hover:bg-gray-100"
                             )}
                             onDrop={handleDrop}
@@ -696,11 +1181,20 @@ export default function AdminPage() {
                                     <p className="text-center text-xs text-gray-500 mt-3">클릭 또는 드래그하여 더 추가</p>
                                 </div>
                             ) : (
-                                <div className="text-center text-gray-500 p-4">
-                                    <p className="text-3xl mb-2">📁</p>
-                                    <p className="text-lg font-bold mb-1">이미지를 드래그하거나 클릭하세요</p>
-                                    <p className="text-sm">영수증, 원천징수영수증 등</p>
-                                </div>
+                                <>
+                                    <Upload size={32} className="mx-auto mb-2 text-gray-400" />
+                                    <p className="font-bold mb-2">이미지를 드래그하거나</p>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            ocrImageInputRef.current?.click();
+                                        }}
+                                        className="px-4 py-2 bg-neo-cyan font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                                    >
+                                        파일 선택
+                                    </button>
+                                    <p className="text-sm text-gray-500 mt-2">영수증, 원천징수영수증 등</p>
+                                </>
                             )}
                         </div>
 
@@ -713,40 +1207,37 @@ export default function AdminPage() {
                             className="hidden"
                         />
 
-                        <div className="flex gap-2">
-                            {capturedImages.length > 0 ? (
-                                <>
-                                    <button
-                                        onClick={() => {
-                                            setCapturedImages([]);
-                                            if (ocrImageInputRef.current) {
-                                                ocrImageInputRef.current.value = "";
-                                            }
-                                        }}
-                                        className="flex-1 py-3 font-bold border-2 border-black bg-white hover:bg-gray-100"
-                                    >
-                                        전체 삭제
-                                    </button>
-                                    <button
-                                        onClick={handleUseImage}
-                                        className="flex-1 py-3 font-bold border-2 border-black bg-neo-cyan hover:bg-cyan-300"
-                                    >
-                                        사용하기 ({capturedImages.length}개)
-                                    </button>
-                                </>
-                            ) : (
-                                <button
-                                    onClick={() => handleButtonClick("ocrImageSelect", () => ocrImageInputRef.current?.click())}
-                                    className={clsx(
-                                        "w-full py-3 font-bold border-2 border-black shadow-[4px_4px_0px_0px_#000] transition-all",
-                                        clickedBtn === "ocrImageSelect"
-                                            ? "bg-neo-orange translate-x-[4px] translate-y-[4px] shadow-none"
-                                            : "bg-neo-cyan hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000]"
-                                    )}
-                                >
-                                    📁 이미지 선택
-                                </button>
-                            )}
+                        {/* 안내 문구 */}
+                        <div className="mb-6 p-3 bg-gray-100 border-2 border-black text-sm">
+                            <p className="font-bold mb-1">📋 지원 이미지:</p>
+                            <p className="text-gray-600">영수증, 원천징수영수증, 카드명세서 등 (최대 10개)</p>
+                        </div>
+
+                        {/* 버튼 */}
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => handleButtonClick("ocrCancel", handleOcrModalClose)}
+                                className={clsx(
+                                    "px-4 py-2 font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all",
+                                    clickedBtn === "ocrCancel"
+                                        ? "bg-neo-orange translate-x-[3px] translate-y-[3px] shadow-none"
+                                        : "bg-white hover:shadow-[2px_2px_0px_0px_#000]"
+                                )}
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleUseImage}
+                                disabled={capturedImages.length === 0}
+                                className={clsx(
+                                    "px-4 py-2 font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all",
+                                    capturedImages.length > 0
+                                        ? "bg-neo-cyan hover:shadow-[2px_2px_0px_0px_#000]"
+                                        : "bg-gray-200 cursor-not-allowed opacity-50"
+                                )}
+                            >
+                                적용하기 {capturedImages.length > 0 && `(${capturedImages.length}개)`}
+                            </button>
                         </div>
                     </div>
                 </div>,
@@ -915,7 +1406,7 @@ export default function AdminPage() {
                                             newMonthlySalary[m] = { ...currentData };
                                         }
                                         setMonthlySalary(newMonthlySalary);
-                                        showNotification("success", `${selectedMonth}월 데이터를 1월~3월에 복사했습니다.`);
+                                        showNotification("success", `${selectedMonth}월 데이터를 1~3월에 복사했습니다.`);
                                     }
                                 })}
                                 className={clsx(
@@ -925,18 +1416,18 @@ export default function AdminPage() {
                                         : "bg-neo-yellow hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000]"
                                 )}
                             >
-                                1월~3월 동일 적용
+                                1~3월 동일 적용
                             </button>
                             <button
                                 onClick={() => handleButtonClick("copy3to12", () => {
                                     const currentData = monthlySalary[selectedMonth];
                                     if (currentData) {
                                         const newMonthlySalary = { ...monthlySalary };
-                                        for (let m = 3; m <= 12; m++) {
+                                        for (let m = 4; m <= 12; m++) {
                                             newMonthlySalary[m] = { ...currentData };
                                         }
                                         setMonthlySalary(newMonthlySalary);
-                                        showNotification("success", `${selectedMonth}월 데이터를 3월~12월에 복사했습니다.`);
+                                        showNotification("success", `${selectedMonth}월 데이터를 4~12월에 복사했습니다.`);
                                     }
                                 })}
                                 className={clsx(
@@ -946,7 +1437,7 @@ export default function AdminPage() {
                                         : "bg-neo-pink hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000]"
                                 )}
                             >
-                                3월~12월 동일 적용
+                                4~12월 동일 적용
                             </button>
                         </div>
                     </div>
@@ -1211,14 +1702,14 @@ export default function AdminPage() {
 
                 {/* Spending Section */}
                 <div className="bg-white border-[3px] border-black p-4 md:p-6 shadow-[4px_4px_0px_0px_#000] md:shadow-[8px_8px_0px_0px_#000]">
-                    <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
                         <div className="flex items-center gap-3">
                             <div className="bg-neo-orange p-2 border-2 border-black">
                                 <CreditCard size={24} />
                             </div>
                             <div>
                                 <h3 className="text-lg md:text-xl font-black">
-                                    지출 데이터 (1월)
+                                    지출 데이터 ({selectedSpendingMonth}월)
                                 </h3>
                                 <p className="text-xs md:text-sm font-bold text-gray-500">
                                     카드사 연동으로 자동 입력
@@ -1227,7 +1718,7 @@ export default function AdminPage() {
                         </div>
                         <div className="flex gap-2 flex-wrap w-full md:w-auto">
                             <button
-                                onClick={() => handleButtonClick("excel", handleExcelModalOpen)}
+                                onClick={() => handleButtonClick("cardExcel", handleCardExcelModalOpen)}
                                 className={clsx(
                                     "flex-1 md:flex-none flex items-center justify-center gap-2 px-3 md:px-4 py-2 border-2 border-black font-bold text-xs md:text-sm shadow-[4px_4px_0px_0px_#000] transition-all",
                                     clickedBtn === "excel"
@@ -1262,27 +1753,71 @@ export default function AdminPage() {
                         </div>
                     </div>
 
-                    <div className="space-y-4">
-                        {spendingItems.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between border-b-2 border-gray-100 pb-2 group">
-                                <span className="font-bold">{item.name}</span>
-                                <div className="flex items-center gap-3">
-                                    <span className="font-bold text-lg tracking-tight">
-                                        {parseInt(item.amount.replace(/[^0-9]/g, "") || "0").toLocaleString("ko-KR")}원
-                                    </span>
-                                    <button
-                                        onClick={() => handleDeleteItem(item.id)}
-                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 text-red-500 transition-opacity"
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                </div>
-                            </div>
+                    {/* Month Tabs for Spending */}
+                    <div className="grid grid-cols-6 md:grid-cols-12 gap-1 mb-4 border-b-2 border-black pb-3">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => (
+                            <button
+                                key={month}
+                                onClick={() => handleButtonClick(`spending-month-${month}`, () => setSelectedSpendingMonth(month))}
+                                className={clsx(
+                                    "py-2 font-bold text-sm border-2 border-black transition-all",
+                                    selectedSpendingMonth === month
+                                        ? "bg-black text-white shadow-none"
+                                        : clickedBtn === `spending-month-${month}`
+                                            ? "bg-neo-cyan translate-x-[2px] translate-y-[2px] shadow-none"
+                                            : "bg-white shadow-[3px_3px_0px_0px_#000] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000]"
+                                )}
+                            >
+                                {month}월
+                            </button>
                         ))}
                     </div>
 
+                    <div className="space-y-4">
+                        {spendingItems.filter(item => item.month === selectedSpendingMonth).length > 0 ? (
+                            spendingItems.filter(item => item.month === selectedSpendingMonth).map((item) => (
+                                <div key={item.id} className="flex items-center justify-between border-b-2 border-gray-100 pb-2 group">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold">{item.name}</span>
+                                        {item.details && item.details.length > 0 && (
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedItemDetails(item);
+                                                    setShowDetailsModal(true);
+                                                }}
+                                                className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded hover:bg-blue-200 flex items-center gap-1"
+                                            >
+                                                <Eye size={12} />
+                                                {item.details.length}건
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="font-bold text-lg tracking-tight">
+                                            {parseInt(item.amount.replace(/[^0-9]/g, "") || "0").toLocaleString("ko-KR")}원
+                                        </span>
+                                        <button
+                                            onClick={() => handleDeleteItem(item.id)}
+                                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 text-red-500 transition-opacity"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-center py-8 text-gray-400">
+                                <p className="font-bold">{selectedSpendingMonth}월 지출 데이터가 없습니다</p>
+                                <p className="text-sm mt-1">엑셀 업로드 또는 수동 항목 추가로 데이터를 입력하세요</p>
+                            </div>
+                        )}
+                    </div>
+
                     <button
-                        onClick={() => handleButtonClick("addItem", () => setShowAddItemModal(true))}
+                        onClick={() => {
+                            setNewItemMonth(selectedSpendingMonth);
+                            handleButtonClick("addItem", () => setShowAddItemModal(true));
+                        }}
                         className={clsx(
                             "w-full mt-6 py-3 border-2 border-dashed font-bold transition-all flex items-center justify-center gap-2",
                             clickedBtn === "addItem"
@@ -1295,7 +1830,7 @@ export default function AdminPage() {
                 </div>
             </div>
 
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t-2 border-black flex justify-center gap-4 z-40 md:static md:bg-transparent md:border-none md:p-0 md:mt-8">
+            <div className="fixed bottom-16 md:bottom-0 left-0 right-0 p-4 bg-white border-t-2 border-black flex justify-center gap-4 z-40 md:static md:bg-transparent md:border-none md:p-0 md:mt-8">
                 <button
                     onClick={() => handleButtonClick("cancel")}
                     className={clsx(
@@ -1319,6 +1854,277 @@ export default function AdminPage() {
                     저장하기
                 </button>
             </div>
+
+            {/* 카드사 엑셀 업로드 모달 */}
+            {showCardExcelModal && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
+                    <div className="bg-white border-[3px] border-black p-6 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000] max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b-2 border-black">
+                            <h3 className="text-xl font-black">엑셀 업로드</h3>
+                            <button
+                                onClick={() => handleButtonClick("cardExcelClose", handleCardExcelModalClose)}
+                                className={clsx(
+                                    "p-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] transition-all",
+                                    clickedBtn === "cardExcelClose"
+                                        ? "bg-neo-orange translate-x-[2px] translate-y-[2px] shadow-none"
+                                        : "bg-white hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_#000]"
+                                )}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* 카드 타입 선택 */}
+                        <div className="mb-6">
+                            <label className="block font-bold mb-3">결제 수단 선택</label>
+                            <div className="flex gap-2 flex-wrap">
+                                {[
+                                    { value: "credit", label: "신용카드", color: "bg-neo-pink" },
+                                    { value: "debit", label: "직불카드", color: "bg-neo-cyan" },
+                                    { value: "cash", label: "현금영수증", color: "bg-neo-yellow" }
+                                ].map(({ value, label, color }) => (
+                                    <button
+                                        key={value}
+                                        onClick={() => setCardType(value as "credit" | "debit" | "cash")}
+                                        className={clsx(
+                                            "px-4 py-2 font-bold border-2 border-black transition-all",
+                                            cardType === value
+                                                ? `${color} shadow-none translate-x-[2px] translate-y-[2px]`
+                                                : "bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000]"
+                                        )}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 파일 업로드 영역 */}
+                        <div
+                            onDrop={handleCardExcelDrop}
+                            onDragOver={(e) => { e.preventDefault(); setIsCardExcelDragging(true); }}
+                            onDragLeave={() => setIsCardExcelDragging(false)}
+                            className={clsx(
+                                "border-2 border-dashed p-8 text-center mb-6 transition-all",
+                                isCardExcelDragging ? "border-neo-cyan bg-neo-cyan/10" : "border-gray-300",
+                                cardExcelFile && "border-neo-green bg-neo-green/10"
+                            )}
+                        >
+                            <input
+                                ref={cardExcelInputRef}
+                                type="file"
+                                accept=".xlsx,.xls"
+                                onChange={handleCardExcelUpload}
+                                className="hidden"
+                            />
+                            {cardExcelFile ? (
+                                <div className="flex items-center justify-center gap-3">
+                                    <CheckCircle size={24} className="text-green-500" />
+                                    <span className="font-bold">{cardExcelFile.name}</span>
+                                    <button
+                                        onClick={() => {
+                                            setCardExcelFile(null);
+                                            setCardExcelPreview([]);
+                                            if (cardExcelInputRef.current) cardExcelInputRef.current.value = "";
+                                        }}
+                                        className="p-1 hover:bg-red-100 text-red-500"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <Upload size={32} className="mx-auto mb-2 text-gray-400" />
+                                    <p className="font-bold mb-2">카드사 엑셀 파일을 드래그하거나</p>
+                                    <button
+                                        onClick={() => cardExcelInputRef.current?.click()}
+                                        className="px-4 py-2 bg-neo-cyan font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                                    >
+                                        파일 선택
+                                    </button>
+                                </>
+                            )}
+                        </div>
+
+                        {/* 미리보기 */}
+                        {cardExcelPreview.length > 0 && (
+                            <div className="mb-6">
+                                <div className="flex justify-between items-center mb-3">
+                                    <span className="font-bold">파싱 결과 미리보기</span>
+                                    <span className="text-sm text-gray-500">
+                                        총 {cardExcelPreview.length}건
+                                        {excludedCount > 0 && (
+                                            <span className="text-red-500 ml-2">
+                                                (제외: {excludedCount}건)
+                                            </span>
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="max-h-48 overflow-y-auto border-2 border-black">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-100 sticky top-0">
+                                            <tr>
+                                                <th className="p-2 text-left border-b-2 border-black">날짜</th>
+                                                <th className="p-2 text-left border-b-2 border-black">가맹점</th>
+                                                <th className="p-2 text-right border-b-2 border-black">금액</th>
+                                                <th className="p-2 text-center border-b-2 border-black">분류</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {cardExcelPreview.map((item, idx) => (
+                                                <tr key={idx} className={clsx(
+                                                    item.category === "excluded" && "bg-red-50 text-red-400 line-through",
+                                                    item.category === "transport" && "bg-blue-50",
+                                                    item.category === "insurance" && "bg-purple-50",
+                                                    item.category === "medical" && "bg-green-50"
+                                                )}>
+                                                    <td className="p-2 border-b">{item.date}</td>
+                                                    <td className="p-2 border-b">{item.merchant}</td>
+                                                    <td className="p-2 border-b text-right">{item.amount.toLocaleString()}원</td>
+                                                    <td className="p-2 border-b text-center">
+                                                        {item.category === "excluded" ? (
+                                                            <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded">제외</span>
+                                                        ) : item.category === "transport" ? (
+                                                            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">대중교통</span>
+                                                        ) : item.category === "insurance" ? (
+                                                            <span className="text-xs bg-purple-100 text-purple-600 px-2 py-1 rounded">보험료</span>
+                                                        ) : item.category === "medical" ? (
+                                                            <span className="text-xs bg-teal-100 text-teal-600 px-2 py-1 rounded">의료비</span>
+                                                        ) : (
+                                                            <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded">카드</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="mt-3 p-3 bg-neo-yellow/30 border-2 border-black space-y-1">
+                                    <div className="flex justify-between font-bold text-sm">
+                                        <span>💳 카드 사용:</span>
+                                        <span>{cardExcelPreview.filter(i => i.category === "card").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm text-blue-600">
+                                        <span>🚌 대중교통:</span>
+                                        <span>{cardExcelPreview.filter(i => i.category === "transport").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm text-purple-600">
+                                        <span>🛡️ 보험료:</span>
+                                        <span>{cardExcelPreview.filter(i => i.category === "insurance").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm text-teal-600">
+                                        <span>🏥 의료비:</span>
+                                        <span>{cardExcelPreview.filter(i => i.category === "medical").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm text-red-500">
+                                        <span>❌ 제외:</span>
+                                        <span>{cardExcelPreview.filter(i => i.category === "excluded").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 안내 문구 */}
+                        <div className="mb-6 p-3 bg-gray-100 border-2 border-black text-sm">
+                            <p className="font-bold mb-2">📋 자동 분류 안내:</p>
+                            <p className="text-blue-600">🚌 대중교통: 버스, 지하철, 모바일이즐 → 대중교통 항목으로 분류</p>
+                            <p className="text-purple-600">🛡️ 보험료: 메리츠화재, DB손해보험 등 → 보험료 항목으로 분류</p>
+                            <p className="text-green-600">🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류</p>
+                            <p className="text-red-500">❌ 제외: 세금, 공과금, 통신비, 도로통행료 → 공제 불가</p>
+                            <p className="text-gray-500 mt-1">취소된 거래는 자동으로 제외됩니다.</p>
+                        </div>
+
+                        {/* 버튼 */}
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={handleCardExcelModalClose}
+                                className="px-4 py-2 font-bold border-2 border-black bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleCardExcelApply}
+                                disabled={!cardExcelFile || cardExcelPreview.length === 0}
+                                className={clsx(
+                                    "px-4 py-2 font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all",
+                                    cardExcelFile && cardExcelPreview.length > 0
+                                        ? "bg-neo-cyan hover:shadow-[2px_2px_0px_0px_#000]"
+                                        : "bg-gray-200 cursor-not-allowed opacity-50"
+                                )}
+                            >
+                                적용하기
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* 세부 내역 모달 */}
+            {showDetailsModal && selectedItemDetails && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
+                    <div className="bg-white border-[3px] border-black p-6 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000] max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b-2 border-black">
+                            <h3 className="text-xl font-black">{selectedItemDetails.name} 상세 내역</h3>
+                            <button
+                                onClick={() => handleButtonClick("detailsClose", () => {
+                                    setShowDetailsModal(false);
+                                    setSelectedItemDetails(null);
+                                })}
+                                className={clsx(
+                                    "p-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] transition-all",
+                                    clickedBtn === "detailsClose"
+                                        ? "bg-neo-orange translate-x-[2px] translate-y-[2px] shadow-none"
+                                        : "bg-white hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_#000]"
+                                )}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="mb-4 p-3 bg-neo-yellow/30 border-2 border-black">
+                            <div className="flex justify-between font-bold">
+                                <span>총 {selectedItemDetails.details?.length || 0}건</span>
+                                <span className="text-lg">{selectedItemDetails.amount}원</span>
+                            </div>
+                        </div>
+
+                        <div className="max-h-96 overflow-y-auto border-2 border-black">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-100 sticky top-0">
+                                    <tr>
+                                        <th className="p-2 text-left border-b-2 border-black">날짜</th>
+                                        <th className="p-2 text-left border-b-2 border-black">가맹점</th>
+                                        <th className="p-2 text-right border-b-2 border-black">금액</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {selectedItemDetails.details?.map((detail, idx) => (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="p-2 border-b">{detail.date}</td>
+                                            <td className="p-2 border-b">{detail.merchant}</td>
+                                            <td className="p-2 border-b text-right">{detail.amount.toLocaleString()}원</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex justify-end mt-4">
+                            <button
+                                onClick={() => {
+                                    setShowDetailsModal(false);
+                                    setSelectedItemDetails(null);
+                                }}
+                                className="px-4 py-2 font-bold border-2 border-black bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                            >
+                                닫기
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div >
     );
 }

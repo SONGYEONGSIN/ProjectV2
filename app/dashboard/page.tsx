@@ -265,6 +265,7 @@ export default function DashboardPage() {
     const [goalAmount, setGoalAmount] = useState(1200000);
     const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
     const [newsLoading, setNewsLoading] = useState(true);
+    const [showAllNews, setShowAllNews] = useState(false);  // 더보기 상태
     const [aiRecommendations, setAiRecommendations] = useState<AIRecommendation[]>([]);
     const [hasUserData, setHasUserData] = useState(false);
     const [deductionItems, setDeductionItems] = useState<DeductionAnalysis[]>([]);
@@ -773,9 +774,12 @@ export default function DashboardPage() {
                                 <span className="w-2 h-2 bg-neo-cyan rounded-full animate-pulse"></span>
                                 3시간마다 업데이트
                             </span>
-                            <Link href="/news" className="text-sm font-bold text-neo-yellow hover:text-white transition-colors flex items-center gap-1">
-                                더보기 +
-                            </Link>
+                            <button
+                                onClick={() => setShowAllNews(!showAllNews)}
+                                className="text-sm font-bold text-neo-yellow hover:text-white transition-colors flex items-center gap-1"
+                            >
+                                {showAllNews ? '접기 -' : '더보기 +'}
+                            </button>
                         </div>
                     </div>
                     <div className="space-y-2">
@@ -785,32 +789,75 @@ export default function DashboardPage() {
                                 <span className="ml-3 text-gray-400">뉴스를 불러오는 중...</span>
                             </div>
                         ) : newsArticles.length > 0 ? (
-                            newsArticles.map((article) => (
-                                <a
-                                    key={article.id}
-                                    href={article.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="block bg-gray-900 border border-gray-700 p-3 hover:bg-gray-800 transition-colors cursor-pointer group"
-                                >
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                {article.isNew && (
-                                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-neo-orange text-white border border-neo-orange">NEW</span>
-                                                )}
-                                                <span className="text-xs text-gray-400">{article.source}</span>
-                                                <span className="text-xs text-gray-500">•</span>
-                                                <span className="text-xs text-gray-500">{article.time}</span>
+                            <>
+                                {/* 10일 이내 뉴스 (항상 표시) */}
+                                {newsArticles
+                                    .filter(article => {
+                                        // "N일 전" 형식에서 일수 추출
+                                        const dayMatch = article.time.match(/(\d+)일/);
+                                        if (dayMatch) {
+                                            return parseInt(dayMatch[1]) <= 10;
+                                        }
+                                        // "N시간 전" 또는 "NEW"는 항상 표시
+                                        return true;
+                                    })
+                                    .map((article) => (
+                                        <a
+                                            key={article.id}
+                                            href={article.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="block bg-gray-900 border border-gray-700 p-3 hover:bg-gray-800 transition-colors cursor-pointer group"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        {article.isNew && (
+                                                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-neo-orange text-white border border-neo-orange">NEW</span>
+                                                        )}
+                                                        <span className="text-xs text-gray-400">{article.source}</span>
+                                                        <span className="text-xs text-gray-500">•</span>
+                                                        <span className="text-xs text-gray-500">{article.time}</span>
+                                                    </div>
+                                                    <h4 className="font-medium text-sm text-white group-hover:text-neo-yellow transition-colors line-clamp-2">
+                                                        {article.title}
+                                                    </h4>
+                                                </div>
+                                                <ArrowRight size={16} className="text-gray-500 group-hover:text-neo-yellow transition-colors flex-shrink-0 mt-1" />
                                             </div>
-                                            <h4 className="font-medium text-sm text-white group-hover:text-neo-yellow transition-colors line-clamp-2">
-                                                {article.title}
-                                            </h4>
-                                        </div>
-                                        <ArrowRight size={16} className="text-gray-500 group-hover:text-neo-yellow transition-colors flex-shrink-0 mt-1" />
-                                    </div>
-                                </a>
-                            ))
+                                        </a>
+                                    ))}
+
+                                {/* 10일 이후 뉴스 (더보기 클릭 시만 표시) */}
+                                {showAllNews && newsArticles
+                                    .filter(article => {
+                                        const dayMatch = article.time.match(/(\d+)일/);
+                                        return dayMatch && parseInt(dayMatch[1]) > 10;
+                                    })
+                                    .map((article) => (
+                                        <a
+                                            key={article.id}
+                                            href={article.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="block bg-gray-800 border border-gray-600 p-3 hover:bg-gray-700 transition-colors cursor-pointer group opacity-80"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="text-xs text-gray-400">{article.source}</span>
+                                                        <span className="text-xs text-gray-500">•</span>
+                                                        <span className="text-xs text-gray-500">{article.time}</span>
+                                                    </div>
+                                                    <h4 className="font-medium text-sm text-gray-300 group-hover:text-neo-yellow transition-colors line-clamp-2">
+                                                        {article.title}
+                                                    </h4>
+                                                </div>
+                                                <ArrowRight size={16} className="text-gray-500 group-hover:text-neo-yellow transition-colors flex-shrink-0 mt-1" />
+                                            </div>
+                                        </a>
+                                    ))}
+                            </>
                         ) : (
                             <div className="text-center py-8 text-gray-400">
                                 뉴스를 불러올 수 없습니다.

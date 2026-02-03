@@ -377,10 +377,9 @@ export default function DashboardPage() {
             const refund = Math.round(withheldTax - calculatedTax);
             setCurrentAmount(refund);
 
-            // 목표 금액 초기화: 기납부세액의 60% 또는 기본값
+            // 목표 금액 초기화: 최대 환급 가능 금액 (기납부세액)
             if (withheldTax > 0) {
-                const initialGoal = Math.min(Math.round(withheldTax * 0.6 / 100000) * 100000, withheldTax);
-                setGoalAmount(initialGoal > 0 ? initialGoal : withheldTax);
+                setGoalAmount(withheldTax);
             }
         } else {
             // 데이터 없으면 기본 Mock 사용
@@ -462,17 +461,23 @@ export default function DashboardPage() {
                         <div className="mt-4">
                             <div className="flex justify-between items-center mb-2">
                                 <span className="text-sm font-bold">목표 달성률</span>
-                                <span className="text-sm font-bold">{goalProgress}%</span>
+                                <span className="text-sm font-bold">{currentAmount >= 0 ? `${goalProgress}%` : '-'}</span>
                             </div>
                             <div className="w-full bg-gray-200 h-4 border-2 border-black relative">
                                 <div
-                                    className="absolute top-0 left-0 h-full bg-neo-orange border-r-2 border-black transition-all duration-500"
-                                    style={{ width: `${goalProgress}%` }}
+                                    className={`absolute top-0 left-0 h-full ${currentAmount >= 0 ? 'bg-neo-orange' : 'bg-red-400'} border-r-2 border-black transition-all duration-500`}
+                                    style={{ width: currentAmount >= 0 ? `${goalProgress}%` : '0%' }}
                                 ></div>
                             </div>
-                            <p className="text-xs font-bold mt-2 text-gray-600">
-                                목표까지 <span className="text-neo-orange">{formatNumber(goalAmount - currentAmount)}원</span> 남음
-                            </p>
+                            {currentAmount >= 0 ? (
+                                <p className="text-xs font-bold mt-2 text-gray-600">
+                                    목표까지 <span className="text-neo-orange">{formatNumber(goalAmount - currentAmount)}원</span> 남음
+                                </p>
+                            ) : (
+                                <p className="text-xs font-bold mt-2 text-red-500">
+                                    ⚠️ 추가 공제 받을 수 있는 항목을 확인해 주세요.
+                                </p>
+                            )}
                         </div>
                     </div>
 
@@ -533,9 +538,22 @@ export default function DashboardPage() {
                                     );
                                 })}
                             </div>
-                            <p className="text-xs text-gray-600 font-medium">
-                                AI 추천: 최적화 시 <span className="text-neo-orange font-bold">{formatNumber(currentAmount + totalPotentialSaving)}원</span> 달성 가능
-                            </p>
+                            {(() => {
+                                const optimizedAmount = currentAmount + totalPotentialSaving;
+                                if (optimizedAmount >= 0) {
+                                    return (
+                                        <p className="text-xs text-gray-600 font-medium">
+                                            AI 추천: 최적화 시 <span className="text-neo-orange font-bold">{formatNumber(optimizedAmount)}원</span> 달성 가능
+                                        </p>
+                                    );
+                                } else {
+                                    return (
+                                        <p className="text-xs text-gray-600 font-medium">
+                                            AI 추천: 최적화 시 추가납부 <span className="text-red-500 font-bold">{formatNumber(Math.abs(optimizedAmount))}원</span>으로 감소 가능
+                                        </p>
+                                    );
+                                }
+                            })()}
                         </div>
                     </div>
                 </div>

@@ -76,7 +76,11 @@ export interface AdminData {
     deductions: {
         medical: number;           // 의료비
         education: number;         // 교육비
-        housing: number;           // 주택마련저축
+        housing: number;           // 주택마련저축 (레거시, 청약저축으로 이관)
+        housingSubscription: number;  // 주택자금(청약저축) - 소득공제
+        housingRent: number;          // 주택자금(월세) - 세액공제
+        housingLoan: number;          // 주택자금(임차차입금) - 소득공제
+        housingMortgage: number;      // 주택자금(장기주택저당차입금) - 소득공제
         pension: number;           // 연금저축/IRP
         insurance: number;         // 보험료
         donation: number;          // 기부금
@@ -204,6 +208,49 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
         spending.publicTransport + spending.traditionalMarket + spending.culture;
     const minSpending = salary * 0.25; // 25% 문턱
 
+    // 실제 공제액 계산 (25% 문턱 초과분에 공제율 적용)
+    let cardDeduction = 0;
+    if (totalCardSpending > minSpending) {
+        let remaining = minSpending;
+
+        // 25% 문턱 소진 순서: 신용카드 → 직불카드 → 현금영수증 → 대중교통 → 전통시장 → 문화비
+        // 1. 신용카드 (15%)
+        const creditUsed = Math.min(spending.creditCard, remaining);
+        remaining -= creditUsed;
+        const creditExcess = spending.creditCard - creditUsed;
+        cardDeduction += creditExcess * 0.15;
+
+        // 2. 직불카드 (30%)
+        const debitUsed = Math.min(spending.debitCard, remaining);
+        remaining -= debitUsed;
+        const debitExcess = spending.debitCard - debitUsed;
+        cardDeduction += debitExcess * 0.30;
+
+        // 3. 현금영수증 (30%)
+        const cashUsed = Math.min(spending.cash, remaining);
+        remaining -= cashUsed;
+        const cashExcess = spending.cash - cashUsed;
+        cardDeduction += cashExcess * 0.30;
+
+        // 4. 대중교통 (80%)
+        const transportUsed = Math.min(spending.publicTransport, remaining);
+        remaining -= transportUsed;
+        const transportExcess = spending.publicTransport - transportUsed;
+        cardDeduction += transportExcess * 0.80;
+
+        // 5. 전통시장 (40%)
+        const marketUsed = Math.min(spending.traditionalMarket, remaining);
+        remaining -= marketUsed;
+        const marketExcess = spending.traditionalMarket - marketUsed;
+        cardDeduction += marketExcess * 0.40;
+
+        // 6. 문화비 (30%)
+        const cultureUsed = Math.min(spending.culture, remaining);
+        remaining -= cultureUsed;
+        const cultureExcess = spending.culture - cultureUsed;
+        cardDeduction += cultureExcess * 0.30;
+    }
+
     // 카드 사용 상태: 문턱 대비 얼마나 사용했는지
     const cardProgress = minSpending > 0 ? totalCardSpending / minSpending : 0;
     const getCardStatus = (): "optimal" | "good" | "warning" | "critical" => {
@@ -224,23 +271,88 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
     const hasChildren = adminData.family?.children >= 1;
     const cardLimit = hasChildren ? 7000000 : 6000000;
 
+    // 한도 적용
+    const finalCardDeduction = Math.min(cardDeduction, cardLimit);
+
+    // 4대보험 합계
+    const socialInsurance = adminData.salary.nationalPension +
+        adminData.salary.healthInsurance +
+        (adminData.salary.longTermCare || 0) +
+        (adminData.salary.employmentInsurance || 0);
+
+    // 인적공제 (부양가족 수)
+    const dependents = 1 +
+        (adminData.family?.spouse ? 1 : 0) +
+        (adminData.family?.children || 0) +
+        (adminData.family?.parents || 0) +
+        (adminData.family?.siblings || 0) +
+        (adminData.family?.foster || 0) +
+        (adminData.family?.recipient || 0);
+    const personalDeduction = dependents * 1500000;
+
     const items: DeductionAnalysis[] = [
+        {
+            id: "0",
+            category: "기본공제 (인적공제)",
+            type: "소득공제",
+            amount: personalDeduction,
+            limit: personalDeduction,  // 한도 없음, 부양가족 수에 따라 결정
+            status: "optimal",
+            thresholdInfo: `부양가족 ${dependents}명 × 150만원`,
+        },
+        {
+            id: "0-1",
+            category: "4대보험",
+            type: "소득공제",
+            amount: socialInsurance,
+            limit: socialInsurance,    // 전액 공제, 한도 없음
+            status: "optimal",
+            thresholdInfo: "납부액 전액 공제",
+        },
         {
             id: "1",
             category: "신용카드 등 사용금액",
             type: "소득공제",
-            amount: totalCardSpending,                    // 실제 사용액
+            amount: finalCardDeduction,                    // 25% 초과분에 공제율 적용한 실제 공제액
             limit: cardLimit,                             // 기본 600만 + 자녀 100만 = 최대 700만원
             status: getCardStatus(),
             thresholdInfo: `25% 문턱: ${Math.round(minSpending).toLocaleString("ko-KR")}원`,
         },
         {
             id: "2",
-            category: "주택마련저축",
+            category: "주택자금(청약저축)",
             type: "소득공제",
-            amount: deductions.housing,
+            amount: deductions.housingSubscription || deductions.housing || 0,
             limit: 3000000,                               // 고정 한도 300만원
-            status: getStatus(deductions.housing / 3000000),
+            status: getStatus((deductions.housingSubscription || deductions.housing || 0) / 3000000),
+            thresholdInfo: "연 300만원 한도, 40% 공제",
+        },
+        {
+            id: "2-1",
+            category: "주택자금(임차차입금)",
+            type: "소득공제",
+            amount: deductions.housingLoan || 0,
+            limit: 4000000,                               // 고정 한도 400만원
+            status: getStatus((deductions.housingLoan || 0) / 4000000),
+            thresholdInfo: "연 400만원 한도, 40% 공제",
+        },
+        {
+            id: "2-2",
+            category: "주택자금(장기주택저당차입금)",
+            type: "소득공제",
+            amount: deductions.housingMortgage || 0,
+            limit: 18000000,                              // 고정 한도 1,800만원
+            status: getStatus((deductions.housingMortgage || 0) / 18000000),
+            thresholdInfo: "연 300~1,800만원 한도",
+        },
+        {
+            id: "2-3",
+            category: "월세 세액공제",
+            type: "세액공제",
+            amount: deductions.housingRent || 0,
+            limit: 10000000,                              // 고정 한도 1,000만원
+            status: getStatus((deductions.housingRent || 0) / 10000000),
+            thresholdInfo: "연 1,000만원 한도, 17% 공제",
         },
         {
             id: "3",

@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { TrendingUp, Sparkles, Bell, Target, ChevronUp, ChevronDown, AlertCircle, CheckCircle2, Lightbulb, PiggyBank, CreditCard, Home, Heart, GraduationCap, Gift, Building, Loader2 } from "lucide-react";
+import { TrendingUp, Sparkles, Bell, Target, ChevronUp, ChevronDown, AlertCircle, CheckCircle2, Lightbulb, PiggyBank, CreditCard, Home, Heart, GraduationCap, Gift, Building, Loader2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { loadTaxData, loadAdminData, generateDeductionAnalysis, DeductionAnalysis } from "@/lib/tax-store";
 import { generateRecommendations, getDefaultRecommendations, calculateTotalPotentialSaving, AIRecommendation } from "@/lib/ai-recommendation";
+import { calculateTax, convertAdminToTaxInputs } from "@/lib/tax-calculator";
 
 interface NewsArticle {
     id: string;
@@ -301,81 +302,16 @@ export default function DashboardPage() {
             setDeductionItems(analysis);
             setHasAdminData(true);
 
-            // 환급액 계산
-            const salary = adminData.salary.totalSalary - (adminData.salary.mealAllowance || 0);
+            // 공통 세금 계산 모듈 사용
+            const taxInputs = convertAdminToTaxInputs(adminData);
+            const taxResult = calculateTax(taxInputs);
 
-            // 근로소득공제
-            let incomeDeduction = 0;
-            if (salary <= 5000000) {
-                incomeDeduction = salary * 0.7;
-            } else if (salary <= 15000000) {
-                incomeDeduction = 3500000 + (salary - 5000000) * 0.4;
-            } else if (salary <= 45000000) {
-                incomeDeduction = 7500000 + (salary - 15000000) * 0.15;
-            } else if (salary <= 100000000) {
-                incomeDeduction = 12000000 + (salary - 45000000) * 0.05;
-            } else {
-                incomeDeduction = 14750000 + (salary - 100000000) * 0.02;
-            }
-
-            // 근로소득금액
-            const earnedIncome = salary - incomeDeduction;
-
-            // 인적공제 (본인 1 + 배우자 + 부양가족)
-            const dependents = 1 +
-                (adminData.family?.spouse ? 1 : 0) +
-                (adminData.family?.children || 0) +
-                (adminData.family?.parents || 0) +
-                (adminData.family?.siblings || 0) +
-                (adminData.family?.foster || 0) +
-                (adminData.family?.recipient || 0);
-            const personalDeduction = dependents * 1500000;
-
-            // 신용카드 등 소득공제
-            const minCardSpending = salary * 0.25;
-            const totalCardSpending = (adminData.spending?.creditCard || 0) +
-                (adminData.spending?.debitCard || 0) +
-                (adminData.spending?.cash || 0);
-            let cardDeduction = 0;
-            if (totalCardSpending > minCardSpending) {
-                const excess = totalCardSpending - minCardSpending;
-                const creditExcess = Math.min(adminData.spending?.creditCard || 0, excess);
-                const debitExcess = Math.max(0, excess - creditExcess);
-                cardDeduction = creditExcess * 0.15 + debitExcess * 0.3;
-                cardDeduction = Math.min(cardDeduction, 3000000);
-            }
-
-            // 과세표준
-            let taxableIncome = earnedIncome - personalDeduction - cardDeduction;
-            taxableIncome = Math.max(0, taxableIncome);
-
-            // 산출세액 (2026년 세율)
-            let calculatedTax = 0;
-            if (taxableIncome <= 14000000) {
-                calculatedTax = taxableIncome * 0.06;
-            } else if (taxableIncome <= 50000000) {
-                calculatedTax = 840000 + (taxableIncome - 14000000) * 0.15;
-            } else if (taxableIncome <= 88000000) {
-                calculatedTax = 6240000 + (taxableIncome - 50000000) * 0.24;
-            } else if (taxableIncome <= 150000000) {
-                calculatedTax = 15360000 + (taxableIncome - 88000000) * 0.35;
-            } else if (taxableIncome <= 300000000) {
-                calculatedTax = 37060000 + (taxableIncome - 150000000) * 0.38;
-            } else if (taxableIncome <= 500000000) {
-                calculatedTax = 94060000 + (taxableIncome - 300000000) * 0.4;
-            } else if (taxableIncome <= 1000000000) {
-                calculatedTax = 174060000 + (taxableIncome - 500000000) * 0.42;
-            } else {
-                calculatedTax = 384060000 + (taxableIncome - 1000000000) * 0.45;
-            }
-
-            // 기납부세액 (Admin에서 가져옴)
+            // 기납부세액 저장 (목표 상한선)
             const withheldTax = adminData.salary.prepaidTax || 0;
-            setTotalPrepaidTax(withheldTax); // 기납부세액 저장 (목표 상한선)
+            setTotalPrepaidTax(withheldTax);
 
-            // 환급액 계산
-            const refund = Math.round(withheldTax - calculatedTax);
-            setCurrentAmount(refund);
+            // 환급액 설정 (Calculator와 동일한 계산 결과)
+            setCurrentAmount(taxResult.refund);
 
             // 목표 금액 초기화: 최대 환급 가능 금액 (기납부세액)
             if (withheldTax > 0) {
@@ -437,7 +373,7 @@ export default function DashboardPage() {
                         <div className="flex flex-col md:flex-row items-end gap-4 mb-4">
                             {hasAdminData ? (
                                 <span className={`text-5xl md:text-7xl font-black tracking-tighter ${currentAmount >= 0 ? 'text-neo-black' : 'text-red-600'}`}>
-                                    {currentAmount < 0 ? '-' : ''}{formatNumber(Math.abs(currentAmount))}
+                                    {currentAmount > 0 ? '-' : currentAmount < 0 ? '+' : ''}{formatNumber(Math.abs(currentAmount))}
                                     <span className="text-2xl text-gray-500 font-bold ml-1">원</span>
                                 </span>
                             ) : (
@@ -575,7 +511,7 @@ export default function DashboardPage() {
                                 <th className="text-left py-3 px-4 font-black">공제 항목</th>
                                 <th className="text-center py-3 px-4 font-black hidden sm:table-cell">구분</th>
                                 <th className="text-right py-3 px-4 font-black">공제 금액</th>
-                                <th className="text-right py-3 px-4 font-black hidden md:table-cell">한도</th>
+                                <th className="text-right py-3 px-4 font-black hidden md:table-cell">최대한도</th>
                                 <th className="text-center py-3 px-4 font-black">활용률</th>
                                 <th className="text-center py-3 px-4 font-black">상태</th>
                             </tr>
@@ -583,8 +519,13 @@ export default function DashboardPage() {
                         <tbody>
                             {deductionItems.map((item, index) => {
                                 const iconMap: Record<string, React.ElementType> = {
+                                    "기본공제 (인적공제)": Users,
+                                    "4대보험": Building,
                                     "신용카드 등 사용금액": CreditCard,
-                                    "주택마련저축": Home,
+                                    "주택자금(청약저축)": Home,
+                                    "주택자금(임차차입금)": Home,
+                                    "주택자금(장기주택저당차입금)": Home,
+                                    "월세 세액공제": Home,
                                     "의료비": Heart,
                                     "교육비": GraduationCap,
                                     "기부금": Gift,

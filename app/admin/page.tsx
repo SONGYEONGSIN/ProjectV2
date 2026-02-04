@@ -85,6 +85,12 @@ export default function AdminPage() {
     const [excelModalMonth, setExcelModalMonth] = useState(1);
     const [ocrModalMonth, setOcrModalMonth] = useState(1);
 
+    // OCR 상태
+    const [ocrPreviewItems, setOcrPreviewItems] = useState<{ category: string, merchant: string, amount: number }[]>([]);
+    const [ocrCardType, setOcrCardType] = useState<"credit" | "debit" | "cash">("credit");
+    const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+    const [ocrDuplicateItems, setOcrDuplicateItems] = useState<{ merchant: string, amount: number }[]>([]);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const ocrImageInputRef = useRef<HTMLInputElement>(null);
     const cardExcelInputRef = useRef<HTMLInputElement>(null);
@@ -270,10 +276,11 @@ export default function AdminPage() {
             return parseInt(str.replace(/[^0-9]/g, "")) || 0;
         };
 
-        // 지출 항목에서 각 카테고리 금액 추출
+        // 지출 항목에서 각 카테고리 금액 추출 (모든 월 합산)
         const getSpendingAmount = (name: string): number => {
-            const item = spendingItems.find(i => i.name.includes(name));
-            return item ? parseAmount(item.amount) : 0;
+            return spendingItems
+                .filter(i => i.name.includes(name))
+                .reduce((sum, item) => sum + parseAmount(item.amount), 0);
         };
 
         const adminData: AdminData = {
@@ -316,12 +323,16 @@ export default function AdminPage() {
                 singleParent: familyData.singleParent,
             },
             deductions: {
-                medical: 0,
+                medical: getSpendingAmount("의료비"),
                 education: 0,
-                housing: 0,
-                pension: 0,
-                insurance: 0,
-                donation: 0,
+                housing: getSpendingAmount("주택자금(청약저축)"),  // 레거시 호환
+                housingSubscription: getSpendingAmount("주택자금(청약저축)"),
+                housingRent: getSpendingAmount("주택자금(월세)"),
+                housingLoan: getSpendingAmount("주택자금(임차차입금)"),
+                housingMortgage: getSpendingAmount("주택자금(장기주택저당차입금)"),
+                pension: getSpendingAmount("연금저축") + getSpendingAmount("퇴직연금"),
+                insurance: getSpendingAmount("보험료"),
+                donation: getSpendingAmount("기부금"),
             },
             spendingItems: spendingItems, // 지출 항목 원본 저장
             updatedAt: new Date().toISOString(),
@@ -1053,7 +1064,7 @@ export default function AdminPage() {
     };
 
     // OCR Image Upload Functions
-    const processImageFiles = (files: FileList | null) => {
+    const processImageFiles = async (files: FileList | null) => {
         if (!files) return;
         const maxImages = 10;
         const currentCount = capturedImages.length;
@@ -1065,16 +1076,115 @@ export default function AdminPage() {
         }
 
         const filesToProcess = Array.from(files).slice(0, remainingSlots);
+        const newImages: string[] = [];
 
-        filesToProcess.forEach(file => {
+        // 이미지 파일 읽기
+        for (const file of filesToProcess) {
             if (file.type.startsWith("image/")) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    setCapturedImages(prev => [...prev, event.target?.result as string]);
-                };
-                reader.readAsDataURL(file);
+                const base64 = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => resolve(event.target?.result as string);
+                    reader.readAsDataURL(file);
+                });
+                newImages.push(base64);
             }
-        });
+        }
+
+        if (newImages.length === 0) return;
+
+        setCapturedImages(prev => [...prev, ...newImages]);
+
+        // 자동 OCR 처리
+        setIsOcrProcessing(true);
+        showNotification("success", `${newImages.length}개 이미지 분석 중...`);
+
+        try {
+            const response = await fetch('/api/ocr', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images: newImages })
+            });
+
+            if (!response.ok) {
+                throw new Error('OCR API 요청 실패');
+            }
+
+            const data = await response.json();
+
+            if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+                // 선택한 카드 타입에 맞게 기본 카테고리 적용
+                const cardTypeToCategory: { [key: string]: string } = {
+                    credit: "신용카드",
+                    debit: "직불카드",
+                    cash: "현금영수증"
+                };
+                const defaultCategory = cardTypeToCategory[ocrCardType];
+
+                const adjustedItems = data.items.map((item: { category: string, merchant: string, amount: number }) => ({
+                    ...item,
+                    // AI가 특수 카테고리(교통, 의료 등)를 감지하지 않았으면 선택한 카드 타입 적용
+                    category: ["신용카드", "체크카드", "현금영수증", "직불카드"].includes(item.category)
+                        ? defaultCategory
+                        : item.category
+                }));
+
+                // 중복 방지: 동일한 가맹점+금액 조합 필터링
+                // 1. 새로 추가될 항목들 간의 중복을 추적 (같은 이미지가 여러 번 업로드된 경우)
+                const seenItems: { [key: string]: boolean } = {};
+                const uniqueAdjustedItems: { category: string, merchant: string, amount: number }[] = [];
+                const internalDuplicateList: { merchant: string, amount: number }[] = [];
+
+                adjustedItems.forEach((item: { category: string, merchant: string, amount: number }) => {
+                    const key = `${item.merchant}-${item.amount}`;
+                    if (!seenItems[key]) {
+                        seenItems[key] = true;
+                        uniqueAdjustedItems.push(item);
+                    } else {
+                        // 중복 항목 기록
+                        internalDuplicateList.push({ merchant: item.merchant, amount: item.amount });
+                    }
+                });
+
+                // 2. 기존 항목과의 중복 제거
+                setOcrPreviewItems(prev => {
+                    const externalDuplicateList: { merchant: string, amount: number }[] = [];
+
+                    const newItems = uniqueAdjustedItems.filter((newItem) => {
+                        const exists = prev.some(existing =>
+                            existing.merchant === newItem.merchant && existing.amount === newItem.amount
+                        );
+                        if (exists) {
+                            externalDuplicateList.push({ merchant: newItem.merchant, amount: newItem.amount });
+                        }
+                        return !exists;
+                    });
+
+                    // 모든 중복 항목 합치기
+                    const allDuplicates = [...internalDuplicateList, ...externalDuplicateList];
+
+                    if (allDuplicates.length > 0) {
+                        setOcrDuplicateItems(prevItems => [...prevItems, ...allDuplicates]);
+
+                        if (newItems.length > 0) {
+                            showNotification("success", `${newItems.length}개 항목 추가 (${allDuplicates.length}개 중복 제외)`);
+                        } else {
+                            showNotification("error", "모든 항목이 이미 추가되어 있습니다.");
+                        }
+                    } else if (newItems.length > 0) {
+                        showNotification("success", `${newItems.length}개 항목이 자동 인식되었습니다!`);
+                    }
+
+                    return [...prev, ...newItems];
+                });
+            } else {
+                showNotification("error", "이미지에서 지출 항목을 찾을 수 없습니다.");
+            }
+        } catch (error) {
+            console.error('OCR Error:', error);
+            showNotification("error", "OCR 분석에 실패했습니다.");
+        } finally {
+            setIsOcrProcessing(false);
+        }
     };
 
     const handleOcrImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1105,20 +1215,85 @@ export default function AdminPage() {
         setShowCameraModal(true);
         setCapturedImages([]);
         setOcrModalMonth(selectedMonth);
+        setOcrPreviewItems([]);
+        setOcrCardType("credit");
+        setOcrDuplicateItems([]);
     };
 
     const handleOcrModalClose = () => {
         setShowCameraModal(false);
         setCapturedImages([]);
+        setOcrPreviewItems([]);
         setIsDragging(false);
         if (ocrImageInputRef.current) {
             ocrImageInputRef.current.value = "";
         }
     };
 
+
+
+    // OCR 수동 입력 항목 삭제
+    const handleRemoveOcrItem = (index: number) => {
+        setOcrPreviewItems(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleUseImage = () => {
-        // In a real implementation, this would send the images to an OCR API
-        showNotification("success", `${ocrModalMonth}월에 ${capturedImages.length}개 이미지가 업로드되었습니다. OCR 분석은 서버 연동이 필요합니다.`);
+        if (ocrPreviewItems.length === 0) {
+            showNotification("error", "최소 1개 이상의 항목을 입력해주세요.");
+            return;
+        }
+
+        // 카테고리별 금액 합계 및 세부 내역 추출
+        const categoryTotals: { [key: string]: { amount: number, details: TransactionDetail[] } } = {};
+
+        ocrPreviewItems.forEach(item => {
+            if (!categoryTotals[item.category]) {
+                categoryTotals[item.category] = { amount: 0, details: [] };
+            }
+            categoryTotals[item.category].amount += item.amount;
+            categoryTotals[item.category].details.push({
+                date: new Date().toISOString().split('T')[0],
+                merchant: item.merchant,
+                amount: item.amount
+            });
+        });
+
+        // 항목 추가 헬퍼 함수
+        const addOrUpdateItem = (name: string, amount: number, details: TransactionDetail[]) => {
+            if (amount <= 0) return;
+            setSpendingItems(prev => {
+                const existingIndex = prev.findIndex(i => i.name === name && i.month === selectedSpendingMonth);
+                if (existingIndex >= 0) {
+                    const currentAmount = parseInt(prev[existingIndex].amount.replace(/[^0-9]/g, "") || "0");
+                    const newAmount = currentAmount + amount;
+                    const existingDetails = prev[existingIndex].details || [];
+                    return prev.map((item, index) =>
+                        index === existingIndex
+                            ? { ...item, amount: newAmount.toLocaleString("ko-KR"), details: [...existingDetails, ...details] }
+                            : item
+                    );
+                } else {
+                    return [...prev, {
+                        id: Date.now().toString() + name + selectedSpendingMonth,
+                        name,
+                        amount: amount.toLocaleString("ko-KR"),
+                        month: selectedSpendingMonth,
+                        details
+                    }];
+                }
+            });
+        };
+
+        // 각 카테고리별로 항목 추가
+        Object.entries(categoryTotals).forEach(([category, data]) => {
+            addOrUpdateItem(category, data.amount, data.details);
+        });
+
+        // 결과 메시지
+        const messages = Object.entries(categoryTotals).map(([cat, data]) =>
+            `${cat} ${data.amount.toLocaleString("ko-KR")}원`
+        );
+        showNotification("success", `${messages.join(", ")} 추가됨`);
         handleOcrModalClose();
     };
 
@@ -1192,13 +1367,28 @@ export default function AdminPage() {
                             </div>
                             <div>
                                 <label className="block font-bold mb-2">항목명</label>
-                                <input
-                                    type="text"
+                                <select
                                     className="neo-input"
-                                    placeholder="예: 의료비, 교육비"
                                     value={newItemName}
                                     onChange={(e) => setNewItemName(e.target.value)}
-                                />
+                                >
+                                    <option value="">-- 항목 선택 --</option>
+                                    <option value="신용카드">💳 신용카드</option>
+                                    <option value="직불카드">💳 직불카드</option>
+                                    <option value="현금영수증">🧾 현금영수증</option>
+                                    <option value="대중교통">🚌 대중교통</option>
+                                    <option value="보험료">🛡 보험료</option>
+                                    <option value="의료비">🏥 의료비</option>
+                                    <option value="전통시장">🏪 전통시장</option>
+                                    <option value="문화체육">🎭 문화체육</option>
+                                    <option value="기부금">❤️ 기부금</option>
+                                    <option value="연금저축">💰 연금저축</option>
+                                    <option value="퇴직연금(IRP)">🏦 퇴직연금(IRP)</option>
+                                    <option value="주택자금(청약저축)">🏠 주택자금(청약저축)</option>
+                                    <option value="주택자금(월세)">🏠 주택자금(월세)</option>
+                                    <option value="주택자금(임차차입금)">🏠 주택자금(임차차입금)</option>
+                                    <option value="주택자금(장기주택저당차입금)">🏠 주택자금(장기주택저당차입금)</option>
+                                </select>
                             </div>
                             <div>
                                 <label className="block font-bold mb-2">금액 (원)</label>
@@ -1251,7 +1441,7 @@ export default function AdminPage() {
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
                     <div className="bg-white border-[3px] border-black p-6 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000] max-h-[80vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-4 pb-4 border-b-2 border-black">
-                            <h3 className="text-xl font-black">이미지 업로드</h3>
+                            <h3 className="text-xl font-black">이미지 업로드 (OCR)</h3>
                             <button
                                 onClick={() => handleButtonClick("ocrModalClose", handleOcrModalClose)}
                                 className={clsx(
@@ -1263,6 +1453,36 @@ export default function AdminPage() {
                             >
                                 <X size={20} />
                             </button>
+                        </div>
+
+                        {/* 카드 타입 탭 */}
+                        <p className="font-bold text-base mb-2">📋 사용 내역 선택</p>
+                        <div className="flex gap-2 mb-4">
+                            {[
+                                { type: "credit" as const, label: "💳 신용카드", btnId: "ocrTabCredit" },
+                                { type: "debit" as const, label: "💳 직불카드", btnId: "ocrTabDebit" },
+                                { type: "cash" as const, label: "🧾 현금영수증", btnId: "ocrTabCash" }
+                            ].map(({ type, label, btnId }) => (
+                                <button
+                                    key={type}
+                                    onClick={() => handleButtonClick(btnId, () => !capturedImages.length && setOcrCardType(type))}
+                                    disabled={capturedImages.length > 0 && ocrCardType !== type}
+                                    className={clsx(
+                                        "flex-1 py-3 font-bold border-2 border-black transition-all",
+                                        ocrCardType === type
+                                            ? clickedBtn === btnId
+                                                ? "bg-neo-cyan translate-x-[3px] translate-y-[3px] shadow-none"
+                                                : "bg-neo-cyan shadow-[3px_3px_0px_0px_#000]"
+                                            : capturedImages.length > 0
+                                                ? "bg-gray-200 cursor-not-allowed opacity-50"
+                                                : clickedBtn === btnId
+                                                    ? "bg-neo-yellow translate-x-[2px] translate-y-[2px] shadow-none"
+                                                    : "bg-white hover:bg-gray-100 shadow-[2px_2px_0px_0px_#000]"
+                                    )}
+                                >
+                                    {label}
+                                </button>
+                            ))}
                         </div>
 
                         {/* 드래그앤드롭 영역 */}
@@ -1295,7 +1515,14 @@ export default function AdminPage() {
                                             </div>
                                         ))}
                                     </div>
-                                    <p className="text-center text-xs text-gray-500 mt-3">클릭 또는 드래그하여 더 추가</p>
+                                    {isOcrProcessing ? (
+                                        <div className="flex items-center justify-center gap-2 mt-3">
+                                            <RefreshCw size={16} className="animate-spin text-neo-cyan" />
+                                            <span className="text-sm font-bold text-neo-cyan">AI 분석 중...</span>
+                                        </div>
+                                    ) : (
+                                        <p className="text-center text-xs text-gray-500 mt-3">클릭 또는 드래그하여 더 추가</p>
+                                    )}
                                 </div>
                             ) : (
                                 <>
@@ -1324,10 +1551,111 @@ export default function AdminPage() {
                             className="hidden"
                         />
 
-                        {/* 안내 문구 */}
+                        {/* 미리보기 테이블 */}
+                        {ocrPreviewItems.length > 0 && (
+                            <div className="mb-6">
+                                <div className="flex justify-between items-center mb-3">
+                                    <span className="font-bold">입력된 항목 미리보기</span>
+                                    <span className="text-sm text-gray-500">
+                                        총 {ocrPreviewItems.length}건
+                                    </span>
+                                </div>
+                                <div className="max-h-48 overflow-y-auto border-2 border-black">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-100 sticky top-0">
+                                            <tr>
+                                                <th className="p-2 text-left border-b-2 border-black">분류</th>
+                                                <th className="p-2 text-left border-b-2 border-black">가맹점</th>
+                                                <th className="p-2 text-right border-b-2 border-black">금액</th>
+                                                <th className="p-2 text-center border-b-2 border-black">삭제</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {ocrPreviewItems.map((item, idx) => (
+                                                <tr key={idx} className={clsx(
+                                                    item.category === "대중교통" && "bg-blue-50",
+                                                    item.category === "보험료" && "bg-purple-50",
+                                                    item.category === "의료비" && "bg-green-50",
+                                                    item.category === "전통시장" && "bg-orange-50",
+                                                    item.category === "문화체육" && "bg-pink-50"
+                                                )}>
+                                                    <td className="p-2 border-b">
+                                                        <span className={clsx(
+                                                            "text-xs px-2 py-1 rounded",
+                                                            item.category === "신용카드" && "bg-green-100 text-green-600",
+                                                            item.category === "체크카드" && "bg-cyan-100 text-cyan-600",
+                                                            item.category === "현금영수증" && "bg-yellow-100 text-yellow-600",
+                                                            item.category === "대중교통" && "bg-blue-100 text-blue-600",
+                                                            item.category === "보험료" && "bg-purple-100 text-purple-600",
+                                                            item.category === "의료비" && "bg-teal-100 text-teal-600",
+                                                            item.category === "전통시장" && "bg-orange-100 text-orange-600",
+                                                            item.category === "문화체육" && "bg-pink-100 text-pink-600"
+                                                        )}>
+                                                            {item.category}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-2 border-b">{item.merchant}</td>
+                                                    <td className="p-2 border-b text-right">{item.amount.toLocaleString()}원</td>
+                                                    <td className="p-2 border-b text-center">
+                                                        <button
+                                                            onClick={() => handleRemoveOcrItem(idx)}
+                                                            className="text-red-500 hover:bg-red-100 p-1 rounded"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* 카테고리별 합계 */}
+                                <div className="mt-3 p-3 bg-neo-yellow/30 border-2 border-black space-y-1">
+                                    {Object.entries(
+                                        ocrPreviewItems.reduce((acc, item) => {
+                                            acc[item.category] = (acc[item.category] || 0) + item.amount;
+                                            return acc;
+                                        }, {} as { [key: string]: number })
+                                    ).map(([category, amount]) => (
+                                        <div key={category} className="flex justify-between text-sm font-bold">
+                                            <span>{category}:</span>
+                                            <span>{amount.toLocaleString()}원</span>
+                                        </div>
+                                    ))}
+                                    <div className="border-t border-black pt-1 mt-2 flex justify-between font-bold">
+                                        <span>총합계:</span>
+                                        <span>{ocrPreviewItems.reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
+                                </div>
+
+                                {/* 중복 항목 표시 */}
+                                {ocrDuplicateItems.length > 0 && (
+                                    <div className="mt-3 p-3 bg-neo-orange/20 border-2 border-neo-orange text-sm">
+                                        <p className="font-bold text-neo-orange mb-2">⚠️ 중복 이미지 감지됨</p>
+                                        {[...new Map(ocrDuplicateItems.map(item => [`${item.merchant}-${item.amount}`, item])).values()].map((item, idx) => {
+                                            const count = ocrDuplicateItems.filter(d => d.merchant === item.merchant && d.amount === item.amount).length;
+                                            return (
+                                                <p key={idx} className="text-gray-700">
+                                                    <span className="font-semibold">{item.merchant}</span> ({item.amount.toLocaleString()}원) - {count}건 중복, 1건만 적용
+                                                </p>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* 자동 분류 안내 */}
                         <div className="mb-6 p-3 bg-gray-100 border-2 border-black text-sm">
-                            <p className="font-bold mb-1">📋 지원 이미지:</p>
-                            <p className="text-gray-600">영수증, 원천징수영수증, 카드명세서 등 (최대 10개)</p>
+                            <p className="font-bold mb-2">📋 자동 분류 안내:</p>
+                            <p className="text-blue-600">🚌 대중교통: 버스, 지하철, 모바일이즘 → 대중교통 항목으로 분류</p>
+                            <p className="text-purple-600">🛡 보험료: 메리츠화재, DB손해보험 등 → 보험료 항목으로 분류</p>
+                            <p className="text-green-600">🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류</p>
+                            <p className="text-orange-600">🏪 전통시장: 전통시장, 재래시장 등 → 전통시장 항목으로 분류</p>
+                            <p className="text-pink-600">🎭 문화체육: 서점, 도서, 영화관, 헬스 등 → 문화체육 항목으로 분류</p>
+                            <p className="text-red-500">❌ 제외: 세금, 공과금, 통신비, 도로통행료 → 공제 불가</p>
+                            <p className="text-gray-500 mt-1">취소된 거래는 자동으로 제외됩니다.</p>
                         </div>
 
                         {/* 버튼 */}
@@ -1345,15 +1673,15 @@ export default function AdminPage() {
                             </button>
                             <button
                                 onClick={handleUseImage}
-                                disabled={capturedImages.length === 0}
+                                disabled={ocrPreviewItems.length === 0}
                                 className={clsx(
                                     "px-4 py-2 font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all",
-                                    capturedImages.length > 0
+                                    ocrPreviewItems.length > 0
                                         ? "bg-neo-cyan hover:shadow-[2px_2px_0px_0px_#000]"
                                         : "bg-gray-200 cursor-not-allowed opacity-50"
                                 )}
                             >
-                                적용하기 {capturedImages.length > 0 && `(${capturedImages.length}개)`}
+                                적용하기 {ocrPreviewItems.length > 0 && `(${ocrPreviewItems.length}건)`}
                             </button>
                         </div>
                     </div>
@@ -1991,36 +2319,35 @@ export default function AdminPage() {
                             </button>
                         </div>
 
-                        {/* 카드 타입 선택 */}
-                        <div className="mb-6">
-                            <label className="block font-bold mb-3">사용 내역 선택</label>
-                            <div className="flex gap-2 flex-wrap">
-                                {[
-                                    { value: "credit", label: "신용카드", color: "bg-neo-pink" },
-                                    { value: "debit", label: "직불카드", color: "bg-neo-cyan" },
-                                    { value: "cash", label: "현금영수증", color: "bg-neo-yellow" }
-                                ].map(({ value, label, color }) => {
-                                    // 파일이 업로드되면 현재 선택된 타입 외에는 비활성화
-                                    const isDisabled = cardExcelFile !== null && cardType !== value;
-                                    return (
-                                        <button
-                                            key={value}
-                                            onClick={() => !isDisabled && setCardType(value as "credit" | "debit" | "cash")}
-                                            disabled={isDisabled}
-                                            className={clsx(
-                                                "px-4 py-2 font-bold border-2 border-black transition-all",
-                                                cardType === value
-                                                    ? `${color} shadow-none translate-x-[2px] translate-y-[2px]`
-                                                    : isDisabled
-                                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed opacity-50"
-                                                        : "bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000]"
-                                            )}
-                                        >
-                                            {label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                        {/* 카드 타입 탭 */}
+                        <p className="font-bold text-base mb-2">📋 사용 내역 선택</p>
+                        <div className="flex gap-2 mb-4">
+                            {[
+                                { type: "credit" as const, label: "💳 신용카드", btnId: "cardExcelTabCredit" },
+                                { type: "debit" as const, label: "💳 직불카드", btnId: "cardExcelTabDebit" },
+                                { type: "cash" as const, label: "🧾 현금영수증", btnId: "cardExcelTabCash" }
+                            ].map(({ type, label, btnId }) => {
+                                const isDisabled = cardExcelFile !== null && cardType !== type;
+                                return (
+                                    <button
+                                        key={type}
+                                        onClick={() => !isDisabled && handleButtonClick(btnId, () => setCardType(type))}
+                                        disabled={isDisabled}
+                                        className={clsx(
+                                            "flex-1 py-3 font-bold border-2 border-black transition-all",
+                                            cardType === type
+                                                ? "bg-neo-cyan shadow-none translate-x-[2px] translate-y-[2px]"
+                                                : isDisabled
+                                                    ? "bg-gray-200 text-gray-400 cursor-not-allowed opacity-50"
+                                                    : clickedBtn === btnId
+                                                        ? "bg-neo-orange translate-x-[2px] translate-y-[2px] shadow-none"
+                                                        : "bg-white shadow-[4px_4px_0px_0px_#000] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000]"
+                                        )}
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
                         </div>
 
                         {/* 파일 업로드 영역 */}

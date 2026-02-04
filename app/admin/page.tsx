@@ -94,7 +94,7 @@ export default function AdminPage() {
     const [cardExcelFile, setCardExcelFile] = useState<File | null>(null);
     const [isCardExcelDragging, setIsCardExcelDragging] = useState(false);
     const [cardType, setCardType] = useState<"credit" | "debit" | "cash">("credit");
-    const [cardExcelPreview, setCardExcelPreview] = useState<{ date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "excluded" }[]>([]);
+    const [cardExcelPreview, setCardExcelPreview] = useState<{ date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded" }[]>([]);
     const [excludedCount, setExcludedCount] = useState(0);
 
     // 지출 항목 상태
@@ -466,12 +466,16 @@ export default function AdminPage() {
         // 통신비
         "휴대전화", "휴대폰", "핸드폰", "인터넷", "SKT", "KT", "LG U+", "LGU+", "통신", "에스케이텔레콤", "케이티",
         // 자동차
-        "신차", "자동차리스", "리스료", "렌트료"
+        "신차", "자동차리스", "리스료", "렌트료",
+        // 선승인/가승인 (취소될 예비 승인)
+        "선승인", "가승인"
     ];
 
     // 대중교통 키워드 (카드 사용금액에서 제외, 대중교통 항목으로 별도 집계)
+    // 참고: 택시는 대중교통 공제 대상이 아님 (일반 카드 사용)
     const PUBLIC_TRANSPORT_KEYWORDS = [
-        "버스", "지하철", "모바일이즐", "모바일이즐페이", "후불교통", "교통카드", "티머니", "캐시비"
+        "버스", "지하철", "모바일이즐", "모바일이즐페이", "후불교통", "교통카드", "티머니", "캐시비",
+        "코레일", "KTX", "SRT", "철도", "고속버스", "시외버스"
     ];
 
     // 보험료 키워드 (카드 사용금액에서 제외, 보험료 항목으로 별도 집계)
@@ -484,6 +488,8 @@ export default function AdminPage() {
     const MEDICAL_KEYWORDS = [
         // 병원/의원
         "병원", "의원", "클리닉", "clinic", "hospital", "메디컬", "medical",
+        // 의료법인/재단
+        "의료법인", "의료재단", "의료원",
         // 약국
         "약국", "pharmacy", "팜",
         // 치과
@@ -494,6 +500,24 @@ export default function AdminPage() {
         "안과", "이비인후과", "피부과", "정형외과", "내과", "외과", "소아과", "산부인과", "비뇨기과",
         // 건강검진센터
         "건강검진", "검진센터"
+    ];
+
+    // 전통시장 키워드 (전통시장 항목으로 별도 집계)
+    const TRADITIONAL_MARKET_KEYWORDS = [
+        "전통시장", "재래시장", "시장", "5일장", "오일장", "장터", "농수산물시장",
+        "수산시장", "농산물시장", "청과시장", "축산시장"
+    ];
+
+    // 문화체육 키워드 (문화체육 항목으로 별도 집계)
+    const CULTURE_SPORTS_KEYWORDS = [
+        // 도서
+        "서점", "도서", "북스", "books", "교보문고", "영풍문고", "알라딘", "예스24",
+        // 공연/영화
+        "영화관", "CGV", "롯데시네마", "메가박스", "극장", "공연장", "뮤지컬", "콘서트",
+        // 미술관/박물관
+        "미술관", "박물관", "전시관", "갤러리",
+        // 체육시설
+        "헬스", "피트니스", "수영장", "골프", "테니스", "볼링", "스포츠센터", "체육관", "요가", "필라테스"
     ];
 
     // 카드사 엑셀 파싱 함수
@@ -520,14 +544,29 @@ export default function AdminPage() {
                 let headerRowIndex = 0;
                 const firstRow = jsonData[0] || [];
 
-                // 헤더에 관련 키워드가 있는지 확인
+                // 첫 행이 요약 행인지 확인 (예: "총 사용금액: 681,235(원)")
                 const firstRowStr = firstRow.map(h => String(h || "").toLowerCase()).join(" ");
-                if (!firstRowStr.includes("승인") && !firstRowStr.includes("금액") && !firstRowStr.includes("가맹점")) {
-                    // 첫 행이 헤더가 아닐 수 있음, 두번째 행 확인
-                    if (jsonData.length > 1) {
-                        const secondRowStr = (jsonData[1] || []).map(h => String(h || "").toLowerCase()).join(" ");
-                        if (secondRowStr.includes("승인") || secondRowStr.includes("금액") || secondRowStr.includes("가맹점")) {
-                            headerRowIndex = 1;
+                const isSummaryFirstRow = firstRowStr.includes("총") && (firstRowStr.includes("금액") || firstRowStr.includes("건"));
+
+                // 첫 행이 요약 행이거나 헤더 키워드가 없으면 다음 행들에서 헤더 찾기
+                if (isSummaryFirstRow || (
+                    !firstRowStr.includes("승인") && !firstRowStr.includes("거래일") &&
+                    !firstRowStr.includes("가맹점") && !firstRowStr.includes("사용처") &&
+                    !firstRowStr.includes("발행구분"))) {
+
+                    // 2~5행 중에서 실제 헤더 행 찾기
+                    for (let i = 1; i < Math.min(5, jsonData.length); i++) {
+                        const rowStr = (jsonData[i] || []).map(h => String(h || "").toLowerCase()).join(" ");
+                        // 헤더 행은 보통 컬럼이 여러 개이고, 헤더 키워드를 포함
+                        const hasMultipleColumns = (jsonData[i] || []).length >= 3;
+                        const hasHeaderKeywords = rowStr.includes("거래일") || rowStr.includes("가맹점") ||
+                            rowStr.includes("사용처") || rowStr.includes("상호") ||
+                            rowStr.includes("승인번호") || rowStr.includes("발행구분");
+
+                        if (hasMultipleColumns && hasHeaderKeywords) {
+                            headerRowIndex = i;
+                            console.log("Found header row at index:", i);
+                            break;
                         }
                     }
                 }
@@ -537,40 +576,50 @@ export default function AdminPage() {
                 console.log("Detected header row index:", headerRowIndex);
                 console.log("Headers:", headers);
 
-                // 열 인덱스 찾기 (카드사마다 열 순서가 다를 수 있음)
+                // 열 인덱스 찾기 (카드사/현금영수증 양식마다 열 순서가 다름)
                 // 날짜 열: 다양한 패턴 지원
                 let dateCol = headers.findIndex(h =>
                     h.includes("승인일") || h.includes("이용일") || h.includes("거래일") ||
                     h.includes("결제일") || h.includes("매출일") || h.includes("일자") ||
-                    h.includes("date") || h.includes("날짜")
+                    h.includes("date") || h.includes("날짜") || h.includes("발행일") ||
+                    h.includes("사용일")
                 );
 
-                // 가맹점 열: 다양한 패턴 지원
+                // 가맹점 열: 다양한 패턴 지원 (현금영수증 포함)
                 let merchantCol = headers.findIndex(h =>
                     h.includes("가맹점") || h.includes("상호") || h.includes("이용처") ||
                     h.includes("merchant") || h.includes("매장") || h.includes("사업자") ||
-                    h.includes("업체") || h.includes("결제처") || h.includes("사용처")
+                    h.includes("업체") || h.includes("결제처") || h.includes("사용처") ||
+                    h.includes("상호명")
                 );
 
                 // 금액 열: 다양한 패턴 지원
                 let amountCol = headers.findIndex(h =>
                     h.includes("금액") || h.includes("결제금액") || h.includes("이용금액") ||
-                    h.includes("승인금액") || h.includes("amount") || h.includes("원")
+                    h.includes("승인금액") || h.includes("amount") || h.includes("원") ||
+                    h.includes("사용금액") || h.includes("거래금액") || h.includes("공제금액")
                 );
 
-                // 취소 열: 다양한 패턴 지원
+                // 취소/발행구분 열: 다양한 패턴 지원 (현금영수증 발행구분 포함)
                 let cancelCol = headers.findIndex(h =>
                     h.includes("취소") || h.includes("cancel") || h.includes("상태") ||
-                    h.includes("비고") || h.includes("구분")
+                    h.includes("비고") || h.includes("구분") || h.includes("발행구분") ||
+                    h.includes("발행유형") || h.includes("거래구분")
                 );
 
                 // 승인번호 열
                 let approvalCol = headers.findIndex(h =>
                     h.includes("승인번호") || h.includes("승인no") || h.includes("approval") ||
-                    h.includes("거래번호") || h.includes("전표번호")
+                    h.includes("거래번호") || h.includes("전표번호") || h.includes("현금영수증번호")
                 );
 
-                console.log("Detected columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol, "cancel:", cancelCol, "approval:", approvalCol);
+                // 업종/분류 열 (전통시장, 대중교통 구분용)
+                let categoryCol = headers.findIndex(h =>
+                    h.includes("업종") || h.includes("업태") || h.includes("분류") ||
+                    h.includes("업종명") || h.includes("카테고리")
+                );
+
+                console.log("Detected columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol, "cancel:", cancelCol, "approval:", approvalCol, "category:", categoryCol);
 
                 // 열을 찾지 못한 경우 스마트 추론
                 if (dateCol === -1 || merchantCol === -1 || amountCol === -1) {
@@ -662,7 +711,7 @@ export default function AdminPage() {
                 console.log("Cancelled approvals:", cancelledApprovals.size);
 
                 // 데이터 파싱 및 필터링
-                const parsedData: { date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "excluded", approvalNum: string }[] = [];
+                const parsedData: { date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded", approvalNum: string }[] = [];
                 let excludedCnt = 0;
                 let skippedCnt = 0;
 
@@ -675,6 +724,17 @@ export default function AdminPage() {
                     const date = String(row[dateCol] || "");
                     const merchant = String(row[merchantCol] || "");
                     const amountRaw = row[amountCol];
+                    const cancelValue = cancelCol >= 0 ? String(row[cancelCol] || "").toLowerCase() : "";
+                    const categoryValue = categoryCol >= 0 ? String(row[categoryCol] || "").toLowerCase() : "";
+
+                    // 발행구분 체크 - 취소/환불 건 제외
+                    const CANCEL_ISSUE_KEYWORDS = ["취소", "환불", "반품", "cancel", "refund", "취소발행"];
+                    const isCancelIssue = CANCEL_ISSUE_KEYWORDS.some(keyword => cancelValue.includes(keyword));
+                    if (isCancelIssue) {
+                        excludedCnt++;
+                        console.log("❌ 취소/환불 발행 제외:", merchant, cancelValue);
+                        return;
+                    }
 
                     // 합계/소계 행 스킵 (엑셀 파일 하단의 총합계 행 제외)
                     const SUMMARY_KEYWORDS = ["총", "합계", "소계", "total", "sum", "subtotal", "건"];
@@ -765,6 +825,21 @@ export default function AdminPage() {
                         console.log("🏥 의료비 감지:", merchant, "-> medical");
                     }
 
+                    // 전통시장 체크 (업종 컬럼 또는 가맹점명 기반)
+                    const isTraditionalMarket = TRADITIONAL_MARKET_KEYWORDS.some(keyword =>
+                        merchantLower.includes(keyword.toLowerCase()) || categoryValue.includes(keyword.toLowerCase())
+                    );
+
+                    // 문화체육 체크 (업종 컬럼 또는 가맹점명 기반)
+                    const isCultureSports = CULTURE_SPORTS_KEYWORDS.some(keyword =>
+                        merchantLower.includes(keyword.toLowerCase()) || categoryValue.includes(keyword.toLowerCase())
+                    );
+
+                    // 업종 컬럼에서 대중교통 추가 체크
+                    const isTransportFromCategory = categoryValue.includes("대중교통") ||
+                        categoryValue.includes("버스") || categoryValue.includes("지하철") ||
+                        categoryValue.includes("택시") || categoryValue.includes("철도");
+
                     // 제외 키워드 체크 (세금, 공과금, 통신비 등)
                     const isExcluded = EXCLUDED_KEYWORDS.some(keyword =>
                         merchantLower.includes(keyword.toLowerCase())
@@ -772,12 +847,14 @@ export default function AdminPage() {
 
                     if (isExcluded) excludedCnt++;
 
-                    // 카테고리 결정 (우선순위: 제외 > 대중교통 > 보험 > 의료비 > 카드)
-                    let category: "card" | "transport" | "insurance" | "medical" | "excluded" = "card";
+                    // 카테고리 결정 (우선순위: 제외 > 대중교통 > 보험 > 의료비 > 전통시장 > 문화체육 > 카드)
+                    let category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded" = "card";
                     if (isExcluded) category = "excluded";
-                    else if (isTransport) category = "transport";
+                    else if (isTransport || isTransportFromCategory) category = "transport";
                     else if (isInsurance) category = "insurance";
                     else if (isMedical) category = "medical";
+                    else if (isTraditionalMarket) category = "market";
+                    else if (isCultureSports) category = "culture";
 
                     console.log("분류 결과:", merchant, "->", category);
 
@@ -794,13 +871,33 @@ export default function AdminPage() {
 
                 console.log("Parsed data count:", parsedData.length, "Excluded:", excludedCnt, "Skipped:", skippedCnt);
 
+                // 디버깅: 카테고리별 합계 출력
+                const cardTotal = parsedData.filter(i => i.category === "card").reduce((s, i) => s + i.amount, 0);
+                const transportTotal = parsedData.filter(i => i.category === "transport").reduce((s, i) => s + i.amount, 0);
+                const insuranceTotal = parsedData.filter(i => i.category === "insurance").reduce((s, i) => s + i.amount, 0);
+                const medicalTotal = parsedData.filter(i => i.category === "medical").reduce((s, i) => s + i.amount, 0);
+                const marketTotal = parsedData.filter(i => i.category === "market").reduce((s, i) => s + i.amount, 0);
+                const cultureTotal = parsedData.filter(i => i.category === "culture").reduce((s, i) => s + i.amount, 0);
+                const excludedTotal = parsedData.filter(i => i.category === "excluded").reduce((s, i) => s + i.amount, 0);
+                const grandTotal = parsedData.reduce((s, i) => s + i.amount, 0);
+
+                console.log("=== 카테고리별 합계 ===");
+                console.log("신용카드:", cardTotal.toLocaleString());
+                console.log("대중교통:", transportTotal.toLocaleString());
+                console.log("보험료:", insuranceTotal.toLocaleString());
+                console.log("의료비:", medicalTotal.toLocaleString());
+                console.log("전통시장:", marketTotal.toLocaleString());
+                console.log("문화체육:", cultureTotal.toLocaleString());
+                console.log("제외:", excludedTotal.toLocaleString());
+                console.log("총합계:", grandTotal.toLocaleString());
+                console.log("======================");
                 if (parsedData.length === 0) {
                     showNotification("error", `파싱된 데이터가 없습니다. (스킵: ${skippedCnt}건, 제외: ${excludedCnt}건)`);
                 } else {
                     showNotification("success", `${parsedData.length}건의 거래 데이터를 찾았습니다.`);
                 }
 
-                setCardExcelPreview(parsedData.slice(0, 50)); // 미리보기 50개
+                setCardExcelPreview(parsedData); // 전체 데이터 저장 (합계 계산용)
                 setExcludedCount(excludedCnt);
 
             } catch (error) {
@@ -866,6 +963,14 @@ export default function AdminPage() {
             .filter(item => item.category === "medical")
             .reduce((sum, item) => sum + item.amount, 0);
 
+        const marketAmount = cardExcelPreview
+            .filter(item => item.category === "market")
+            .reduce((sum, item) => sum + item.amount, 0);
+
+        const cultureAmount = cardExcelPreview
+            .filter(item => item.category === "culture")
+            .reduce((sum, item) => sum + item.amount, 0);
+
         // 카테고리별 세부 내역 추출
         const cardDetails: TransactionDetail[] = cardExcelPreview
             .filter(item => item.category === "card")
@@ -881,6 +986,14 @@ export default function AdminPage() {
 
         const medicalDetails: TransactionDetail[] = cardExcelPreview
             .filter(item => item.category === "medical")
+            .map(item => ({ date: item.date, merchant: item.merchant, amount: item.amount }));
+
+        const marketDetails: TransactionDetail[] = cardExcelPreview
+            .filter(item => item.category === "market")
+            .map(item => ({ date: item.date, merchant: item.merchant, amount: item.amount }));
+
+        const cultureDetails: TransactionDetail[] = cardExcelPreview
+            .filter(item => item.category === "culture")
             .map(item => ({ date: item.date, merchant: item.merchant, amount: item.amount }));
 
         // 카드 타입에 따른 이름
@@ -923,6 +1036,8 @@ export default function AdminPage() {
         addOrUpdateItem("대중교통", transportAmount, transportDetails);
         addOrUpdateItem("보험료", insuranceAmount, insuranceDetails);
         addOrUpdateItem("의료비", medicalAmount, medicalDetails);
+        addOrUpdateItem("전통시장", marketAmount, marketDetails);
+        addOrUpdateItem("문화체육", cultureAmount, cultureDetails);
 
         // 결과 메시지
         const messages = [];
@@ -930,6 +1045,8 @@ export default function AdminPage() {
         if (transportAmount > 0) messages.push(`대중교통 ${transportAmount.toLocaleString("ko-KR")}원`);
         if (insuranceAmount > 0) messages.push(`보험료 ${insuranceAmount.toLocaleString("ko-KR")}원`);
         if (medicalAmount > 0) messages.push(`의료비 ${medicalAmount.toLocaleString("ko-KR")}원`);
+        if (marketAmount > 0) messages.push(`전통시장 ${marketAmount.toLocaleString("ko-KR")}원`);
+        if (cultureAmount > 0) messages.push(`문화체육 ${cultureAmount.toLocaleString("ko-KR")}원`);
 
         showNotification("success", `${messages.join(", ")} 추가됨 (제외: ${excludedCount}건)`);
         handleCardExcelModalClose();
@@ -1876,26 +1993,33 @@ export default function AdminPage() {
 
                         {/* 카드 타입 선택 */}
                         <div className="mb-6">
-                            <label className="block font-bold mb-3">결제 수단 선택</label>
+                            <label className="block font-bold mb-3">사용 내역 선택</label>
                             <div className="flex gap-2 flex-wrap">
                                 {[
                                     { value: "credit", label: "신용카드", color: "bg-neo-pink" },
                                     { value: "debit", label: "직불카드", color: "bg-neo-cyan" },
                                     { value: "cash", label: "현금영수증", color: "bg-neo-yellow" }
-                                ].map(({ value, label, color }) => (
-                                    <button
-                                        key={value}
-                                        onClick={() => setCardType(value as "credit" | "debit" | "cash")}
-                                        className={clsx(
-                                            "px-4 py-2 font-bold border-2 border-black transition-all",
-                                            cardType === value
-                                                ? `${color} shadow-none translate-x-[2px] translate-y-[2px]`
-                                                : "bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000]"
-                                        )}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
+                                ].map(({ value, label, color }) => {
+                                    // 파일이 업로드되면 현재 선택된 타입 외에는 비활성화
+                                    const isDisabled = cardExcelFile !== null && cardType !== value;
+                                    return (
+                                        <button
+                                            key={value}
+                                            onClick={() => !isDisabled && setCardType(value as "credit" | "debit" | "cash")}
+                                            disabled={isDisabled}
+                                            className={clsx(
+                                                "px-4 py-2 font-bold border-2 border-black transition-all",
+                                                cardType === value
+                                                    ? `${color} shadow-none translate-x-[2px] translate-y-[2px]`
+                                                    : isDisabled
+                                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed opacity-50"
+                                                        : "bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000]"
+                                            )}
+                                        >
+                                            {label}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -1935,7 +2059,7 @@ export default function AdminPage() {
                             ) : (
                                 <>
                                     <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-                                    <p className="font-bold mb-2">카드사 엑셀 파일을 드래그하거나</p>
+                                    <p className="font-bold mb-2">엑셀 파일을 드래그하거나</p>
                                     <button
                                         onClick={() => cardExcelInputRef.current?.click()}
                                         className="px-4 py-2 bg-neo-cyan font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
@@ -1976,7 +2100,9 @@ export default function AdminPage() {
                                                     item.category === "excluded" && "bg-red-50 text-red-400 line-through",
                                                     item.category === "transport" && "bg-blue-50",
                                                     item.category === "insurance" && "bg-purple-50",
-                                                    item.category === "medical" && "bg-green-50"
+                                                    item.category === "medical" && "bg-green-50",
+                                                    item.category === "market" && "bg-orange-50",
+                                                    item.category === "culture" && "bg-pink-50"
                                                 )}>
                                                     <td className="p-2 border-b">{item.date}</td>
                                                     <td className="p-2 border-b">{item.merchant}</td>
@@ -1990,8 +2116,14 @@ export default function AdminPage() {
                                                             <span className="text-xs bg-purple-100 text-purple-600 px-2 py-1 rounded">보험료</span>
                                                         ) : item.category === "medical" ? (
                                                             <span className="text-xs bg-teal-100 text-teal-600 px-2 py-1 rounded">의료비</span>
+                                                        ) : item.category === "market" ? (
+                                                            <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded">전통시장</span>
+                                                        ) : item.category === "culture" ? (
+                                                            <span className="text-xs bg-pink-100 text-pink-600 px-2 py-1 rounded">문화체육</span>
                                                         ) : (
-                                                            <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded">카드</span>
+                                                            <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded">
+                                                                {cardType === "credit" ? "신용" : cardType === "debit" ? "직불" : "현금"}
+                                                            </span>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -2001,7 +2133,7 @@ export default function AdminPage() {
                                 </div>
                                 <div className="mt-3 p-3 bg-neo-yellow/30 border-2 border-black space-y-1">
                                     <div className="flex justify-between font-bold text-sm">
-                                        <span>💳 카드 사용:</span>
+                                        <span>{cardType === "credit" ? "💳 신용카드" : cardType === "debit" ? "💳 직불카드" : "🧾 현금영수증"}:</span>
                                         <span>{cardExcelPreview.filter(i => i.category === "card").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
                                     </div>
                                     <div className="flex justify-between text-sm text-blue-600">
@@ -2016,6 +2148,14 @@ export default function AdminPage() {
                                         <span>🏥 의료비:</span>
                                         <span>{cardExcelPreview.filter(i => i.category === "medical").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
                                     </div>
+                                    <div className="flex justify-between text-sm text-orange-600">
+                                        <span>🏪 전통시장:</span>
+                                        <span>{cardExcelPreview.filter(i => i.category === "market").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm text-pink-600">
+                                        <span>🎭 문화체육:</span>
+                                        <span>{cardExcelPreview.filter(i => i.category === "culture").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
+                                    </div>
                                     <div className="flex justify-between text-sm text-red-500">
                                         <span>❌ 제외:</span>
                                         <span>{cardExcelPreview.filter(i => i.category === "excluded").reduce((s, i) => s + i.amount, 0).toLocaleString()}원</span>
@@ -2029,7 +2169,9 @@ export default function AdminPage() {
                             <p className="font-bold mb-2">📋 자동 분류 안내:</p>
                             <p className="text-blue-600">🚌 대중교통: 버스, 지하철, 모바일이즐 → 대중교통 항목으로 분류</p>
                             <p className="text-purple-600">🛡️ 보험료: 메리츠화재, DB손해보험 등 → 보험료 항목으로 분류</p>
-                            <p className="text-green-600">🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류</p>
+                            <p className="text-teal-600">🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류</p>
+                            <p className="text-orange-600">🏪 전통시장: 전통시장, 재래시장 등 → 전통시장 항목으로 분류</p>
+                            <p className="text-pink-600">🎭 문화체육: 서점, 도서, 영화관, 헬스 등 → 문화체육 항목으로 분류</p>
                             <p className="text-red-500">❌ 제외: 세금, 공과금, 통신비, 도로통행료 → 공제 불가</p>
                             <p className="text-gray-500 mt-1">취소된 거래는 자동으로 제외됩니다.</p>
                         </div>

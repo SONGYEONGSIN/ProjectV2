@@ -332,7 +332,14 @@ export default function AdminPage() {
                 housingMortgage: getSpendingAmount("주택자금(장기주택저당차입금)"),
                 pension: getSpendingAmount("연금저축") + getSpendingAmount("퇴직연금"),
                 insurance: getSpendingAmount("보험료"),
-                donation: getSpendingAmount("기부금"),
+                donation: getSpendingAmount("기부금"),  // 레거시 호환 (총합)
+                donationPolitical: getSpendingAmount("기부금(정치자금)"),
+                donationHometown: getSpendingAmount("기부금(고향사랑)"),
+                donationDisaster: getSpendingAmount("기부금(고향사랑특별재난)"),
+                donationSpecial: getSpendingAmount("기부금(특례기부금)"),
+                donationStock: getSpendingAmount("기부금(우리사주조합)"),
+                donationReligious: getSpendingAmount("기부금(일반기부금(종교))"),
+                donationNonReligious: getSpendingAmount("기부금(일반기부금(종교 외))"),
             },
             spendingItems: spendingItems, // 지출 항목 원본 저장
             updatedAt: new Date().toISOString(),
@@ -1381,7 +1388,13 @@ export default function AdminPage() {
                                     <option value="의료비">🏥 의료비</option>
                                     <option value="전통시장">🏪 전통시장</option>
                                     <option value="문화체육">🎭 문화체육</option>
-                                    <option value="기부금">❤️ 기부금</option>
+                                    <option value="기부금(정치자금)">🎗️ 기부금(정치자금)</option>
+                                    <option value="기부금(고향사랑)">🎗️ 기부금(고향사랑)</option>
+                                    <option value="기부금(고향사랑특별재난)">🎗️ 기부금(고향사랑특별재난)</option>
+                                    <option value="기부금(특례기부금)">🎗️ 기부금(특례기부금)</option>
+                                    <option value="기부금(우리사주조합)">🎗️ 기부금(우리사주조합)</option>
+                                    <option value="기부금(일반기부금(종교))">🎗️ 기부금(일반기부금(종교))</option>
+                                    <option value="기부금(일반기부금(종교 외))">🎗️ 기부금(일반기부금(종교 외))</option>
                                     <option value="연금저축">💰 연금저축</option>
                                     <option value="퇴직연금(IRP)">🏦 퇴직연금(IRP)</option>
                                     <option value="주택자금(청약저축)">🏠 주택자금(청약저축)</option>
@@ -2156,9 +2169,6 @@ export default function AdminPage() {
                                 <h3 className="text-lg md:text-xl font-black">
                                     지출 데이터 ({selectedSpendingMonth}월)
                                 </h3>
-                                <p className="text-xs md:text-sm font-bold text-gray-500">
-                                    카드사 연동으로 자동 입력
-                                </p>
                             </div>
                         </div>
                         <div className="flex gap-2 flex-wrap w-full md:w-auto">

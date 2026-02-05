@@ -1866,16 +1866,19 @@ export default function CalculatorPage() {
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
                                                                 주택청약저축 납입액 (원)
-                                                                <Tooltip content="연 납입액 최대 300만원 한도, 40% 소득공제">
+                                                                <Tooltip content="연 납입액 최대 300만원 한도, 40% 소득공제 (총급여 7천만원 이하)">
                                                                     <Info size={14} className="text-gray-400 cursor-help" />
                                                                 </Tooltip>
                                                             </label>
                                                             <input
                                                                 type="text"
-                                                                className="neo-input"
+                                                                className={`neo-input ${inputs.salary > 70000000 ? 'border-red-500 bg-red-50' : ''}`}
                                                                 value={formatNumber(inputs.housingSubscription)}
                                                                 onChange={(e) => handleInputChange("housingSubscription", e.target.value)}
                                                             />
+                                                            {inputs.salary > 70000000 && inputs.housingSubscription > 0 && (
+                                                                <p className="text-xs text-red-500 font-bold">⚠️ 총급여 7천만원 초과로 공제 불가</p>
+                                                            )}
                                                         </div>
                                                         <div className="space-y-2">
                                                             <label className="font-bold flex items-center gap-2">
@@ -2608,20 +2611,20 @@ export default function CalculatorPage() {
                     onClick={handleCalculate}
                     disabled={isCalculating}
                     className={clsx(
-                        "neo-btn w-full",
+                        "neo-btn w-full text-xl py-4",
                         isCalculating
                             ? "bg-gray-300 cursor-not-allowed"
-                            : "bg-neo-orange hover:bg-neo-yellow"
+                            : "bg-black text-white hover:bg-gray-800"
                     )}
                 >
                     {isCalculating ? (
                         <>
-                            <RefreshCw size={20} className="animate-spin" />
+                            <RefreshCw size={24} className="animate-spin" />
                             계산 중...
                         </>
                     ) : (
                         <>
-                            <Calculator size={20} />
+                            <Calculator size={24} />
                             예상 환급액 계산하기
                         </>
                     )}

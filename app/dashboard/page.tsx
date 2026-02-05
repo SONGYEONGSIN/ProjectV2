@@ -531,10 +531,11 @@ export default function DashboardPage() {
                                     "기부금": Gift,
                                     "연금저축/IRP": PiggyBank,
                                     "보험료": Building,
+                                    "자녀": Users,
                                 };
                                 const Icon = iconMap[item.category] || CreditCard;
                                 const maxValue = item.maxBenefit || item.limit;
-                                const utilizationRate = maxValue > 0 ? Math.round((item.amount / maxValue) * 100) : 0;
+                                const utilizationRate = maxValue > 0 ? Math.min(100, Math.round((item.amount / maxValue) * 100)) : 0;
                                 return (
                                     <tr
                                         key={item.id}
@@ -555,15 +556,15 @@ export default function DashboardPage() {
                                                 {item.type}
                                             </span>
                                         </td>
-                                        <td className="text-right py-3 px-2 sm:px-4 whitespace-nowrap text-sm sm:text-base">
-                                            <div className="font-bold">{formatNumber(Math.round(item.amount))}원</div>
+                                        <td className="text-right py-3 px-2 sm:px-4 text-sm sm:text-base">
+                                            <div className="font-bold whitespace-nowrap">{formatNumber(Math.round(item.amount))}원</div>
                                             {item.thresholdInfo && (
-                                                <div className="text-xs text-gray-400 mt-0.5 whitespace-pre-line">{item.thresholdInfo}</div>
+                                                <div className="text-xs text-gray-400 mt-0.5 whitespace-pre-line text-right">{item.thresholdInfo}</div>
                                             )}
                                         </td>
                                         <td className="text-right py-4 px-4 text-gray-500 hidden md:table-cell whitespace-pre-line">
                                             {item.category === "교육비" ? (
-                                                <span className="text-xs">본인: 한도 없음{"\n"}미취학·초중고: 3,000,000원{"\n"}대학: 9,000,000원</span>
+                                                <span className="text-xs">본인: 한도 없음{"\n"}미취학: 1인당 3,000,000원{"\n"}초중고: 1인당 3,000,000원{"\n"}대학: 1인당 9,000,000원</span>
                                             ) : item.category === "의료비" ? (
                                                 <span className="text-xs">난임시술비: 한도 없음{"\n"}미숙아·선천성: 한도 없음{"\n"}본인/장애/만65/6세: 한도 없음{"\n"}그 밖의 부양가족: 7,000,000원</span>
                                             ) : item.category === "기부금" && item.donationLimits ? (
@@ -574,6 +575,18 @@ export default function DashboardPage() {
                                                     우리사주조합: {formatNumber(item.donationLimits.employeeStock)}원{"\n"}
                                                     일반기부(종교): {formatNumber(item.donationLimits.generalReligious)}원{"\n"}
                                                     일반기부(종교 외): {formatNumber(item.donationLimits.generalNonReligious)}원
+                                                </span>
+                                            ) : item.category === "자녀" && item.childLimits ? (
+                                                <span className="text-xs">
+                                                    자녀 세액공제:{"\n"}
+                                                    첫째: {formatNumber(item.childLimits.first)}원{"\n"}
+                                                    둘째: {formatNumber(item.childLimits.second)}원{"\n"}
+                                                    셋째 이상: 1인당 {formatNumber(item.childLimits.thirdPlus)}원{"\n"}
+                                                    ───{"\n"}
+                                                    출생·입양 공제:{"\n"}
+                                                    첫째: {formatNumber(item.childLimits.birthFirst)}원{"\n"}
+                                                    둘째: {formatNumber(item.childLimits.birthSecond)}원{"\n"}
+                                                    셋째 이상: {formatNumber(item.childLimits.birthThirdPlus)}원
                                                 </span>
                                             ) : (
                                                 <>{formatNumber(item.limit)}원</>

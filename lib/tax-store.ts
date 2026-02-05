@@ -74,14 +74,34 @@ export interface AdminData {
     };
     // 추가 공제 항목들
     deductions: {
-        medical: number;           // 의료비
-        education: number;         // 교육비
+        medical: number;           // 의료비 (총합, 레거시 호환)
+        medicalInfertility: number;    // 의료비(난임시술비) - 30%
+        medicalPremature: number;      // 의료비(미숙아,선천성) - 20%
+        medicalSelf: number;           // 의료비(본인,장애,65세,6세) - 15%
+        medicalFamily: number;         // 의료비(그밖부양가족) - 15%
+        education: number;         // 교육비 (총합, 레거시 호환)
+        educationSelf: number;     // 교육비(본인)
+        educationChild: number;    // 교육비(미취학·초중고) - 레거시
+        // 자녀별 교육비 (1인당 300만원 한도)
+        educationPreschool1: number;  // 교육비(미취학)-자녀1
+        educationPreschool2: number;  // 교육비(미취학)-자녀2
+        educationPreschool3: number;  // 교육비(미취학)-자녀3
+        educationK12_1: number;       // 교육비(초중고)-자녀1
+        educationK12_2: number;       // 교육비(초중고)-자녀2
+        educationK12_3: number;       // 교육비(초중고)-자녀3
+        // 자녀별 대학 교육비 (1인당 900만원 한도)
+        educationUniv: number;        // 교육비(대학) - 레거시
+        educationUniv1: number;       // 교육비(대학)-자녀1
+        educationUniv2: number;       // 교육비(대학)-자녀2
+        educationUniv3: number;       // 교육비(대학)-자녀3
         housing: number;           // 주택마련저축 (레거시, 청약저축으로 이관)
         housingSubscription: number;  // 주택자금(청약저축) - 소득공제
         housingRent: number;          // 주택자금(월세) - 세액공제
         housingLoan: number;          // 주택자금(임차차입금) - 소득공제
         housingMortgage: number;      // 주택자금(장기주택저당차입금) - 소득공제
-        pension: number;           // 연금저축/IRP
+        pension: number;           // 연금저축/IRP (레거시 호환)
+        pensionSavings: number;    // 연금저축 (연 600만원 한도)
+        pensionIRP: number;        // 퇴직연금(IRP) (연금저축 포함 연 900만원 한도)
         insurance: number;         // 보험료
         donation: number;          // 기부금 (총합, 레거시 호환)
         donationPolitical: number;     // 기부금(정치자금)
@@ -113,6 +133,14 @@ export interface DeductionAnalysis {
         employeeStock: number;        // 우리사주조합: 근로소득금액의 30%
         generalReligious: number;     // 일반기부금(종교): 근로소득금액의 10%
         generalNonReligious: number;  // 일반기부금(종교외): 근로소득금액의 30%
+    };
+    childLimits?: {
+        first: number;           // 첫째: 15만원
+        second: number;          // 둘째: 15만원
+        thirdPlus: number;       // 셋째 이상: 30만원
+        birthFirst: number;      // 출생·입양 첫째: 30만원
+        birthSecond: number;     // 출생·입양 둘째: 50만원
+        birthThirdPlus: number;  // 출생·입양 셋째 이상: 70만원
     };
     status: "optimal" | "good" | "warning" | "critical";
     thresholdInfo?: string; // 문턱 정보 (신용카드 25%, 의료비 3% 등)
@@ -394,132 +422,528 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
             thresholdInfo: "연 1,000만원 한도 × 17%",
             maxBenefit: 10000000 * 0.17, // 최대 170만원
         },
-        {
-            id: "3",
-            category: "의료비",
-            type: "세액공제",
-            amount: Math.max(0, deductions.medical - salary * 0.03) * 0.15,  // 3% 문턱 초과분 × 15%
-            limit: 7000000,                                                   // 공제 대상 한도: 700만원
-            status: deductions.medical > salary * 0.03 ? "good" : "warning",
-            thresholdInfo: `3% 문턱: ${Math.round(salary * 0.03).toLocaleString("ko-KR")}원\n지출: ${deductions.medical.toLocaleString("ko-KR")}원\n초과분: ${Math.max(0, deductions.medical - Math.round(salary * 0.03)).toLocaleString("ko-KR")}원\n\n난임시술비: 해당금액 × 30%\n미숙아·선천성: 해당금액 × 20%\n본인/장애/만65/6세: 해당금액 × 15%\n그 밖의 부양가족: 해당금액 × 15%`,
-            maxBenefit: 7000000 * 0.15, // 최대 105만원 (그 밖의 부양가족 기준)
-        },
-        {
-            id: "4",
-            category: "교육비",
-            type: "세액공제",
-            amount: Math.min(deductions.education, 3000000) * 0.15,          // 15% 세액공제율 적용
-            limit: 3000000,                                                   // 납입 한도: 300만원
-            status: getStatus(deductions.education / 3000000),
-            thresholdInfo: "본인: 해당금액 × 15%\n미취학·초중고: 해당금액 × 15%\n대학: 해당금액 × 15%",
-            maxBenefit: 3000000 * 0.15, // 최대 45만원 (미취학/초중고 기준)
-        },
-        {
-            id: "5",
-            category: "기부금",
-            type: "세액공제",
-            amount: (() => {
-                // 정치자금: 10만원이하 100/110, 초과 15%, 3천만원초과 25%
-                const political = deductions.donationPolitical || 0;
-                let politicalCredit = 0;
+        (() => {
+            // 의료비 계산 및 계산식 생성
+            const infertility = deductions.medicalInfertility || 0;  // 난임시술비: 30%
+            const premature = deductions.medicalPremature || 0;      // 미숙아,선천성: 20%
+            const selfMedical = deductions.medicalSelf || 0;         // 본인,장애,65세,6세: 15%
+            const familyMedical = deductions.medicalFamily || 0;     // 그밖부양가족: 15%
+
+            // 총 의료비 (레거시 호환 포함)
+            const totalMedical = infertility + premature + selfMedical + familyMedical + (deductions.medical || 0);
+
+            // 3% 문턱
+            const threshold = Math.round(salary * 0.03);
+            const exceeds = totalMedical > threshold;
+
+            // 각 카테고리별 세액공제액 계산 (3% 문턱은 전체에 적용)
+            // 실제로는 그밖부양가족만 700만원 한도 적용
+            const FAMILY_LIMIT = 7000000;
+            const familyLimited = Math.min(familyMedical, FAMILY_LIMIT);
+
+            const infertilityCredit = Math.round(infertility * 0.30);
+            const prematureCredit = Math.round(premature * 0.20);
+            const selfCredit = Math.round(selfMedical * 0.15);
+            const familyCredit = Math.round(familyLimited * 0.15);
+
+            // 총 세액공제액 (3% 문턱 초과분에만 적용)
+            const totalCredit = exceeds ?
+                Math.round(Math.max(0, infertility - Math.min(threshold, infertility)) * 0.30) +
+                Math.round(Math.max(0, premature) * 0.20) +
+                Math.round(Math.max(0, selfMedical) * 0.15) +
+                Math.round(Math.min(familyMedical, FAMILY_LIMIT) * 0.15)
+                : 0;
+
+            // thresholdInfo 생성 - 각 카테고리별 계산식 표시
+            const infoLines: string[] = [];
+
+            // 난임시술비
+            infoLines.push(`난임시술비: ${infertility.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${infertility.toLocaleString("ko-KR")} × 30%\n= ${infertilityCredit.toLocaleString("ko-KR")}원`);
+
+            // 미숙아,선천성
+            infoLines.push(`미숙아·선천성: ${premature.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${premature.toLocaleString("ko-KR")} × 20%\n= ${prematureCredit.toLocaleString("ko-KR")}원`);
+
+            // 본인,장애,65세,6세
+            infoLines.push(`본인/장애/만65/6세: ${selfMedical.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${selfMedical.toLocaleString("ko-KR")} × 15%\n= ${selfCredit.toLocaleString("ko-KR")}원`);
+
+            // 그밖부양가족 (700만원 한도)
+            if (familyMedical > FAMILY_LIMIT) {
+                infoLines.push(`그 밖의 부양가족: ${familyMedical.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 한도: ${FAMILY_LIMIT.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`그 밖의 부양가족: ${familyMedical.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${familyLimited.toLocaleString("ko-KR")} × 15%\n= ${familyCredit.toLocaleString("ko-KR")}원`);
+
+            // 합계
+            const totalCreditSum = infertilityCredit + prematureCredit + selfCredit + familyCredit;
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${totalCreditSum.toLocaleString("ko-KR")}원`);
+
+            return {
+                id: "3",
+                category: "의료비",
+                type: "세액공제" as const,
+                amount: totalCreditSum,
+                limit: FAMILY_LIMIT,
+                status: getStatus(totalMedical / 10000000),
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: FAMILY_LIMIT * 0.15,
+            };
+        })(),
+        (() => {
+            // 교육비 계산 및 계산식 생성
+            const eduSelf = deductions.educationSelf || 0;      // 본인: 한도 없음
+
+            // 자녀별 교육비 (1인당 300만원 한도)
+            const pre1 = deductions.educationPreschool1 || 0;
+            const pre2 = deductions.educationPreschool2 || 0;
+            const pre3 = deductions.educationPreschool3 || 0;
+            const k12_1 = deductions.educationK12_1 || 0;
+            const k12_2 = deductions.educationK12_2 || 0;
+            const k12_3 = deductions.educationK12_3 || 0;
+
+            // 자녀별 대학 교육비 (1인당 900만원 한도)
+            const univ1 = deductions.educationUniv1 || 0;
+            const univ2 = deductions.educationUniv2 || 0;
+            const univ3 = deductions.educationUniv3 || 0;
+
+            // 한도 적용
+            const CHILD_LIMIT = 3000000;      // 미취학·초중고: 1인당 300만원
+            const UNIV_LIMIT = 9000000;       // 대학: 1인당 900만원
+
+            const eduSelfLimited = eduSelf; // 본인은 한도 없음
+            const pre1Limited = Math.min(pre1, CHILD_LIMIT);
+            const pre2Limited = Math.min(pre2, CHILD_LIMIT);
+            const pre3Limited = Math.min(pre3, CHILD_LIMIT);
+            const k12_1Limited = Math.min(k12_1, CHILD_LIMIT);
+            const k12_2Limited = Math.min(k12_2, CHILD_LIMIT);
+            const k12_3Limited = Math.min(k12_3, CHILD_LIMIT);
+            const univ1Limited = Math.min(univ1, UNIV_LIMIT);
+            const univ2Limited = Math.min(univ2, UNIV_LIMIT);
+            const univ3Limited = Math.min(univ3, UNIV_LIMIT);
+
+            // 세액공제액 계산 (15%)
+            const eduSelfCredit = Math.round(eduSelfLimited * 0.15);
+            const pre1Credit = Math.round(pre1Limited * 0.15);
+            const pre2Credit = Math.round(pre2Limited * 0.15);
+            const pre3Credit = Math.round(pre3Limited * 0.15);
+            const k12_1Credit = Math.round(k12_1Limited * 0.15);
+            const k12_2Credit = Math.round(k12_2Limited * 0.15);
+            const k12_3Credit = Math.round(k12_3Limited * 0.15);
+            const univ1Credit = Math.round(univ1Limited * 0.15);
+            const univ2Credit = Math.round(univ2Limited * 0.15);
+            const univ3Credit = Math.round(univ3Limited * 0.15);
+
+            const totalCredit = eduSelfCredit + pre1Credit + pre2Credit + pre3Credit +
+                k12_1Credit + k12_2Credit + k12_3Credit + univ1Credit + univ2Credit + univ3Credit;
+
+            // thresholdInfo 생성 - 금액이 있는 항목만 계산식과 함께 표시
+            const infoLines: string[] = [];
+
+            // 헬퍼 함수: 교육비 계산식 추가
+            const addEduInfo = (label: string, amount: number, limit: number, limited: number, credit: number) => {
+                if (amount > 0) {
+                    if (amount > limit) {
+                        infoLines.push(`${label}: ${amount.toLocaleString("ko-KR")}원`);
+                        infoLines.push(`→ 한도: ${limited.toLocaleString("ko-KR")}원`);
+                    } else {
+                        infoLines.push(`${label}: ${amount.toLocaleString("ko-KR")}원`);
+                    }
+                    infoLines.push(`└ ${limited.toLocaleString("ko-KR")} × 15%\n= ${credit.toLocaleString("ko-KR")}원`);
+                }
+            };
+
+            if (eduSelf > 0) {
+                infoLines.push(`본인: ${eduSelf.toLocaleString("ko-KR")}원`);
+                infoLines.push(`└ ${eduSelf.toLocaleString("ko-KR")} × 15%\n= ${eduSelfCredit.toLocaleString("ko-KR")}원`);
+            }
+
+            addEduInfo("미취학-자녀1", pre1, CHILD_LIMIT, pre1Limited, pre1Credit);
+            addEduInfo("미취학-자녀2", pre2, CHILD_LIMIT, pre2Limited, pre2Credit);
+            addEduInfo("미취학-자녀3", pre3, CHILD_LIMIT, pre3Limited, pre3Credit);
+            addEduInfo("초중고-자녀1", k12_1, CHILD_LIMIT, k12_1Limited, k12_1Credit);
+            addEduInfo("초중고-자녀2", k12_2, CHILD_LIMIT, k12_2Limited, k12_2Credit);
+            addEduInfo("초중고-자녀3", k12_3, CHILD_LIMIT, k12_3Limited, k12_3Credit);
+            addEduInfo("대학-자녀1", univ1, UNIV_LIMIT, univ1Limited, univ1Credit);
+            addEduInfo("대학-자녀2", univ2, UNIV_LIMIT, univ2Limited, univ2Credit);
+            addEduInfo("대학-자녀3", univ3, UNIV_LIMIT, univ3Limited, univ3Credit);
+
+            if (infoLines.length > 0) {
+                infoLines.push(`──────────────`);
+                infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+            }
+
+            const totalEducation = eduSelf + pre1 + pre2 + pre3 + k12_1 + k12_2 + k12_3 + univ1 + univ2 + univ3;
+
+            return {
+                id: "4",
+                category: "교육비",
+                type: "세액공제" as const,
+                amount: totalCredit,
+                limit: 9000000,  // 대학 기준 최대 한도
+                status: getStatus(totalEducation > 0 ? Math.min(totalEducation / 9000000, 1) : 0),
+                thresholdInfo: infoLines.length > 0 ? infoLines.join("\n") : "본인: 한도 없음\n미취학: 1인당 3,000,000원\n초중고: 1인당 3,000,000원\n대학: 1인당 9,000,000원",
+                maxBenefit: 9000000 * 0.15,
+            };
+        })(),
+        (() => {
+            // 정치자금 계산 및 계산식 생성 (한도: 근로소득금액)
+            const politicalRaw = deductions.donationPolitical || 0;
+            const politicalLimit = earnedIncome; // 정치자금 한도 = 근로소득금액
+            const political = Math.min(politicalRaw, politicalLimit); // 한도 적용
+            const isLimited = politicalRaw > politicalLimit;
+            let politicalCredit = 0;
+            let politicalFormula = "";
+            if (political > 0) {
                 if (political <= 100000) {
                     politicalCredit = Math.round(political * 100 / 110);
+                    politicalFormula = `└ ${political.toLocaleString("ko-KR")} × 100/110\n= ${politicalCredit.toLocaleString("ko-KR")}원`;
                 } else if (political <= 30000000) {
-                    politicalCredit = Math.round(100000 * 100 / 110) + Math.round((political - 100000) * 0.15);
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const excessCredit = Math.round((political - 100000) * 0.15);
+                    politicalCredit = baseCredit + excessCredit;
+                    politicalFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원 초과: ${(political - 100000).toLocaleString("ko-KR")} × 15%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
                 } else {
-                    politicalCredit = Math.round(100000 * 100 / 110) + Math.round(29900000 * 0.15) + Math.round((political - 30000000) * 0.25);
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const midCredit = Math.round(29900000 * 0.15);
+                    const highCredit = Math.round((political - 30000000) * 0.25);
+                    politicalCredit = baseCredit + midCredit + highCredit;
+                    politicalFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원~3천만원: 29,900,000 × 15%\n= ${midCredit.toLocaleString("ko-KR")}원\n└ 3천만원 초과: ${(political - 30000000).toLocaleString("ko-KR")} × 25%\n= ${highCredit.toLocaleString("ko-KR")}원`;
                 }
+            }
 
-                // 고향사랑: 10만원이하 100/110, 초과 15%
-                const hometown = deductions.donationHometown || 0;
-                let hometownCredit = 0;
+
+            // 고향사랑 계산 및 계산식 생성
+            const hometown = deductions.donationHometown || 0;
+            let hometownCredit = 0;
+            let hometownFormula = "";
+            if (hometown > 0) {
                 if (hometown <= 100000) {
                     hometownCredit = Math.round(hometown * 100 / 110);
+                    hometownFormula = `└ ${hometown.toLocaleString("ko-KR")} × 100/110\n= ${hometownCredit.toLocaleString("ko-KR")}원`;
                 } else {
-                    hometownCredit = Math.round(100000 * 100 / 110) + Math.round((hometown - 100000) * 0.15);
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const excessCredit = Math.round((hometown - 100000) * 0.15);
+                    hometownCredit = baseCredit + excessCredit;
+                    hometownFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원 초과: ${(hometown - 100000).toLocaleString("ko-KR")} × 15%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
                 }
+            }
 
-                // 고향사랑특별재난: 10만원이하 100/110, 초과 30%
-                const disaster = deductions.donationDisaster || 0;
-                let disasterCredit = 0;
+            // 고향사랑특별재난 계산 및 계산식 생성
+            const disaster = deductions.donationDisaster || 0;
+            let disasterCredit = 0;
+            let disasterFormula = "";
+            if (disaster > 0) {
                 if (disaster <= 100000) {
                     disasterCredit = Math.round(disaster * 100 / 110);
+                    disasterFormula = `└ ${disaster.toLocaleString("ko-KR")} × 100/110\n= ${disasterCredit.toLocaleString("ko-KR")}원`;
                 } else {
-                    disasterCredit = Math.round(100000 * 100 / 110) + Math.round((disaster - 100000) * 0.3);
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const excessCredit = Math.round((disaster - 100000) * 0.3);
+                    disasterCredit = baseCredit + excessCredit;
+                    disasterFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원 초과: ${(disaster - 100000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
                 }
+            }
 
-                // 특례기부금: 1천만원이하 15%, 초과 30%
-                const special = deductions.donationSpecial || 0;
-                let specialCredit = 0;
+            // 특례기부금 계산 및 계산식 생성
+            const special = deductions.donationSpecial || 0;
+            let specialCredit = 0;
+            let specialFormula = "";
+            if (special > 0) {
                 if (special <= 10000000) {
                     specialCredit = Math.round(special * 0.15);
+                    specialFormula = `└ ${special.toLocaleString("ko-KR")} × 15%\n= ${specialCredit.toLocaleString("ko-KR")}원`;
                 } else {
-                    specialCredit = Math.round(10000000 * 0.15) + Math.round((special - 10000000) * 0.3);
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((special - 10000000) * 0.3);
+                    specialCredit = baseCredit + excessCredit;
+                    specialFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(special - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
                 }
+            }
 
-                // 우리사주조합: 1천만원이하 15%, 초과 30%
-                const stock = deductions.donationStock || 0;
-                let stockCredit = 0;
+            // 우리사주조합 계산 및 계산식 생성
+            const stock = deductions.donationStock || 0;
+            let stockCredit = 0;
+            let stockFormula = "";
+            if (stock > 0) {
                 if (stock <= 10000000) {
                     stockCredit = Math.round(stock * 0.15);
+                    stockFormula = `└ ${stock.toLocaleString("ko-KR")} × 15%\n= ${stockCredit.toLocaleString("ko-KR")}원`;
                 } else {
-                    stockCredit = Math.round(10000000 * 0.15) + Math.round((stock - 10000000) * 0.3);
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((stock - 10000000) * 0.3);
+                    stockCredit = baseCredit + excessCredit;
+                    stockFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(stock - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
                 }
+            }
 
-                // 일반기부금(종교): 1천만원이하 15%, 초과 30%
-                const religious = deductions.donationReligious || 0;
-                let religiousCredit = 0;
+            // 일반기부금(종교) 계산 및 계산식 생성
+            const religious = deductions.donationReligious || 0;
+            let religiousCredit = 0;
+            let religiousFormula = "";
+            if (religious > 0) {
                 if (religious <= 10000000) {
                     religiousCredit = Math.round(religious * 0.15);
+                    religiousFormula = `└ ${religious.toLocaleString("ko-KR")} × 15%\n= ${religiousCredit.toLocaleString("ko-KR")}원`;
                 } else {
-                    religiousCredit = Math.round(10000000 * 0.15) + Math.round((religious - 10000000) * 0.3);
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((religious - 10000000) * 0.3);
+                    religiousCredit = baseCredit + excessCredit;
+                    religiousFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(religious - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
                 }
+            }
 
-                // 일반기부금(종교 외): 1천만원이하 15%, 초과 30%
-                const nonReligious = deductions.donationNonReligious || 0;
-                let nonReligiousCredit = 0;
+            // 일반기부금(종교 외) 계산 및 계산식 생성
+            const nonReligious = deductions.donationNonReligious || 0;
+            let nonReligiousCredit = 0;
+            let nonReligiousFormula = "";
+            if (nonReligious > 0) {
                 if (nonReligious <= 10000000) {
                     nonReligiousCredit = Math.round(nonReligious * 0.15);
+                    nonReligiousFormula = `└ ${nonReligious.toLocaleString("ko-KR")} × 15%\n= ${nonReligiousCredit.toLocaleString("ko-KR")}원`;
                 } else {
-                    nonReligiousCredit = Math.round(10000000 * 0.15) + Math.round((nonReligious - 10000000) * 0.3);
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((nonReligious - 10000000) * 0.3);
+                    nonReligiousCredit = baseCredit + excessCredit;
+                    nonReligiousFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(nonReligious - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
                 }
+            }
 
-                return politicalCredit + hometownCredit + disasterCredit + specialCredit + stockCredit + religiousCredit + nonReligiousCredit;
-            })(),
-            limit: earnedIncome,
-            status: getStatus((deductions.donationPolitical || 0) + (deductions.donationHometown || 0) + (deductions.donationDisaster || 0) + (deductions.donationSpecial || 0) + (deductions.donationStock || 0) + (deductions.donationReligious || 0) + (deductions.donationNonReligious || 0) / earnedIncome),
-            thresholdInfo: `정치자금: ${(deductions.donationPolitical || 0).toLocaleString("ko-KR")}원\n고향사랑: ${(deductions.donationHometown || 0).toLocaleString("ko-KR")}원\n고향사랑특별재난: ${(deductions.donationDisaster || 0).toLocaleString("ko-KR")}원\n특례기부금: ${(deductions.donationSpecial || 0).toLocaleString("ko-KR")}원\n우리사주조합: ${(deductions.donationStock || 0).toLocaleString("ko-KR")}원\n일반기부(종교): ${(deductions.donationReligious || 0).toLocaleString("ko-KR")}원\n일반기부(종교 외): ${(deductions.donationNonReligious || 0).toLocaleString("ko-KR")}원`,
-            maxBenefit: earnedIncome * 0.3,
-            earnedIncome: earnedIncome,
-            donationLimits: {
-                politicalFund: earnedIncome,
-                hometownDisaster: 2000000,
-                specialDonation: earnedIncome,
-                employeeStock: Math.round(earnedIncome * 0.3),
-                generalReligious: Math.round(earnedIncome * 0.1),
-                generalNonReligious: Math.round(earnedIncome * 0.3),
-            },
-        },
-        {
-            id: "6",
-            category: "연금저축/IRP",
-            type: "세액공제",
-            amount: Math.min(deductions.pension, 9000000) * 0.12,            // 12% 세액공제율 적용
-            limit: 9000000,                                                   // 납입 한도: 900만원
-            status: getStatus(deductions.pension / 9000000),
-            thresholdInfo: `${Math.min(deductions.pension, 9000000).toLocaleString("ko-KR")}원 × 12%`,
-            maxBenefit: 9000000 * 0.12, // 최대 108만원
-        },
-        {
-            id: "7",
-            category: "보험료",
-            type: "세액공제",
-            amount: Math.min(deductions.insurance, 1000000) * 0.12,          // 12% 세액공제율 적용
-            limit: 1000000,                                                   // 납입 한도: 100만원
-            status: getStatus(deductions.insurance / 1000000),
-            thresholdInfo: `${Math.min(deductions.insurance, 1000000).toLocaleString("ko-KR")}원 × 12%`,
-            maxBenefit: 1000000 * 0.12, // 최대 12만원
-        },
+            const totalCredit = politicalCredit + hometownCredit + disasterCredit + specialCredit + stockCredit + religiousCredit + nonReligiousCredit;
+
+            // thresholdInfo 생성 - 금액이 있는 항목만 계산식과 함께 표시
+            const infoLines: string[] = [];
+            if (political > 0) {
+                if (isLimited) {
+                    infoLines.push(`정치자금: ${politicalRaw.toLocaleString("ko-KR")}원`);
+                    infoLines.push(`→ 한도: ${political.toLocaleString("ko-KR")}원`);
+                } else {
+                    infoLines.push(`정치자금: ${political.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(politicalFormula);
+            }
+            if (hometown > 0) {
+                infoLines.push(`고향사랑: ${hometown.toLocaleString("ko-KR")}원`);
+                infoLines.push(hometownFormula);
+            }
+            if (disaster > 0) {
+                infoLines.push(`특별재난: ${disaster.toLocaleString("ko-KR")}원`);
+                infoLines.push(disasterFormula);
+            }
+            if (special > 0) {
+                infoLines.push(`특례기부금: ${special.toLocaleString("ko-KR")}원`);
+                infoLines.push(specialFormula);
+            }
+            if (stock > 0) {
+                infoLines.push(`우리사주: ${stock.toLocaleString("ko-KR")}원`);
+                infoLines.push(stockFormula);
+            }
+            if (religious > 0) {
+                infoLines.push(`종교기부: ${religious.toLocaleString("ko-KR")}원`);
+                infoLines.push(religiousFormula);
+            }
+            if (nonReligious > 0) {
+                infoLines.push(`일반기부: ${nonReligious.toLocaleString("ko-KR")}원`);
+                infoLines.push(nonReligiousFormula);
+            }
+            if (infoLines.length > 0) {
+                infoLines.push(`──────────────`);
+                infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+            }
+
+            return {
+                id: "5",
+                category: "기부금",
+                type: "세액공제" as const,
+                amount: totalCredit,
+                limit: earnedIncome,
+                status: getStatus(Math.min(1, (political + hometown + disaster + special + stock + religious + nonReligious) / earnedIncome)),
+                thresholdInfo: infoLines.length > 0 ? infoLines.join("\n") : "기부금 내역이 없습니다",
+                maxBenefit: earnedIncome * 0.3,
+                earnedIncome: earnedIncome,
+                donationLimits: {
+                    politicalFund: earnedIncome,
+                    hometownDisaster: 2000000,
+                    specialDonation: earnedIncome,
+                    employeeStock: Math.round(earnedIncome * 0.3),
+                    generalReligious: Math.round(earnedIncome * 0.1),
+                    generalNonReligious: Math.round(earnedIncome * 0.3),
+                },
+            };
+        })(),
+        (() => {
+            // 연금저축/IRP 계산 및 계산식 생성
+            // 레거시 호환: pensionSavings가 없으면 pension 필드 사용
+            const savingsAmount = deductions?.pensionSavings || deductions?.pension || 0;
+            const irpAmount = deductions?.pensionIRP || 0;
+
+            // 한도 적용
+            const SAVINGS_LIMIT = 6000000; // 연금저축: 600만원
+            const TOTAL_LIMIT = 9000000;   // 연금저축+IRP 합산: 900만원
+
+            const savingsLimited = Math.min(savingsAmount, SAVINGS_LIMIT);
+            const remainingLimit = Math.max(0, TOTAL_LIMIT - savingsLimited);
+            const irpLimited = Math.min(irpAmount, remainingLimit);
+
+            // 세액공제액 계산 (12%)
+            const savingsCredit = Math.round(savingsLimited * 0.12);
+            const irpCredit = Math.round(irpLimited * 0.12);
+            const totalCredit = savingsCredit + irpCredit;
+
+            // thresholdInfo 생성 - 연금저축과 IRP 각각 계산식 표시 (0원이어도 표시)
+            const infoLines: string[] = [];
+
+            // 연금저축 계산식 (항상 표시)
+            if (savingsAmount > SAVINGS_LIMIT) {
+                infoLines.push(`연금저축: ${savingsAmount.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 한도: ${savingsLimited.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`연금저축: ${savingsAmount.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${savingsLimited.toLocaleString("ko-KR")} × 12%\n= ${savingsCredit.toLocaleString("ko-KR")}원`);
+
+            // 퇴직연금(IRP) 계산식 (항상 표시)
+            if (irpAmount > remainingLimit && remainingLimit > 0) {
+                infoLines.push(`퇴직연금(IRP): ${irpAmount.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 한도: ${irpLimited.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`퇴직연금(IRP): ${irpAmount.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${irpLimited.toLocaleString("ko-KR")} × 12%\n= ${irpCredit.toLocaleString("ko-KR")}원`);
+
+            // 합계 표시
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+
+            const totalAmount = savingsAmount + irpAmount;
+
+            return {
+                id: "6",
+                category: "연금저축/IRP",
+                type: "세액공제" as const,
+                amount: totalCredit,
+                limit: TOTAL_LIMIT,
+                status: getStatus(totalAmount / TOTAL_LIMIT),
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: TOTAL_LIMIT * 0.12,
+            };
+        })(),
+        (() => {
+            // 보험료 계산 및 계산식 생성
+            const insuranceAmount = deductions.insurance || 0;
+            const INSURANCE_LIMIT = 1000000; // 한도: 100만원
+            const limitedAmount = Math.min(insuranceAmount, INSURANCE_LIMIT);
+            const taxCredit = Math.round(limitedAmount * 0.12); // 12% 세액공제
+
+            // thresholdInfo 생성
+            const infoLines: string[] = [];
+            if (insuranceAmount > 0) {
+                infoLines.push(`납입액: ${insuranceAmount.toLocaleString("ko-KR")}원`);
+                if (insuranceAmount > INSURANCE_LIMIT) {
+                    infoLines.push(`→ 한도: ${INSURANCE_LIMIT.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`└ ${limitedAmount.toLocaleString("ko-KR")} × 12%\n= ${taxCredit.toLocaleString("ko-KR")}원`);
+            }
+
+            return {
+                id: "7",
+                category: "보험료",
+                type: "세액공제" as const,
+                amount: taxCredit,
+                limit: INSURANCE_LIMIT,
+                status: getStatus(insuranceAmount / INSURANCE_LIMIT),
+                thresholdInfo: infoLines.length > 0 ? infoLines.join("\n") : "보장성 보험: 연 100만원 한도\n세액공제율: 12%",
+                maxBenefit: INSURANCE_LIMIT * 0.12,
+            };
+        })(),
+        (() => {
+            // 자녀 세액공제 계산 및 계산식 생성
+            const childrenOver8 = adminData.family?.childrenOver8 || 0;
+            const birthAdoption = adminData.family?.birthAdoption || "none";
+
+            // 자녀 세액공제 (만 8세 이상)
+            // 첫째, 둘째: 각 15만원
+            // 셋째 이상: 각 30만원
+            let childCredit = 0;
+            if (childrenOver8 >= 1) childCredit += 150000; // 첫째
+            if (childrenOver8 >= 2) childCredit += 150000; // 둘째
+            if (childrenOver8 >= 3) childCredit += (childrenOver8 - 2) * 300000; // 셋째 이상
+
+            // 출생·입양 공제
+            let birthAdoptionCredit = 0;
+            let birthAdoptionName = "";
+            switch (birthAdoption) {
+                case "first":
+                    birthAdoptionCredit = 300000;
+                    birthAdoptionName = "첫째";
+                    break;
+                case "second":
+                    birthAdoptionCredit = 500000;
+                    birthAdoptionName = "둘째";
+                    break;
+                case "third1":
+                case "third2":
+                case "third3":
+                    birthAdoptionCredit = 700000;
+                    birthAdoptionName = "셋째 이상";
+                    break;
+            }
+
+            const totalCredit = childCredit + birthAdoptionCredit;
+
+            // thresholdInfo 생성 - 계산식 표시
+            const infoLines: string[] = [];
+
+            // 자녀 세액공제 계산식
+            infoLines.push(`자녀 세액공제 (만 8세 이상 ${childrenOver8}명)`);
+            if (childrenOver8 > 0) {
+                const parts: string[] = [];
+                if (childrenOver8 >= 1) parts.push("첫째: 150,000원");
+                if (childrenOver8 >= 2) parts.push("둘째: 150,000원");
+                if (childrenOver8 >= 3) {
+                    const thirdPlus = childrenOver8 - 2;
+                    parts.push(`셋째 이상 ${thirdPlus}명: ${(thirdPlus * 300000).toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`└ ${parts.join(" + ")}`);
+                infoLines.push(`= ${childCredit.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`└ 0원`);
+            }
+
+            // 출생·입양 공제 계산식
+            if (birthAdoption !== "none") {
+                infoLines.push(``);
+                infoLines.push(`출생·입양 공제 (${birthAdoptionName})`);
+                infoLines.push(`└ ${birthAdoptionCredit.toLocaleString("ko-KR")}원`);
+            }
+
+            // 합계
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+
+            return {
+                id: "8",
+                category: "자녀",
+                type: "세액공제" as const,
+                amount: totalCredit,
+                limit: 0, // 한도 없음
+                status: childrenOver8 > 0 ? "optimal" as const : "critical" as const,
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: 0, // 한도 없음
+                childLimits: {
+                    first: 150000,
+                    second: 150000,
+                    thirdPlus: 300000,
+                    birthFirst: 300000,
+                    birthSecond: 500000,
+                    birthThirdPlus: 700000,
+                },
+            };
+        })(),
     ];
 
 

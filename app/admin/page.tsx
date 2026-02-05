@@ -323,14 +323,32 @@ export default function AdminPage() {
                 singleParent: familyData.singleParent,
             },
             deductions: {
-                medical: getSpendingAmount("의료비"),
-                education: 0,
+                medical: getSpendingAmount("의료비"),  // 레거시 호환
+                medicalInfertility: getSpendingAmount("의료비(난임시술비)"),
+                medicalPremature: getSpendingAmount("의료비(미숙아,선천성)"),
+                medicalSelf: getSpendingAmount("의료비(본인,장애,65세,6세)"),
+                medicalFamily: getSpendingAmount("의료비(그밖부양가족)"),
+                education: getSpendingAmount("교육비"),  // 레거시 호환 (총합)
+                educationSelf: getSpendingAmount("교육비(본인)"),
+                educationChild: 0,  // 레거시 호환
+                educationPreschool1: getSpendingAmount("교육비(미취학)-자녀1"),
+                educationPreschool2: getSpendingAmount("교육비(미취학)-자녀2"),
+                educationPreschool3: getSpendingAmount("교육비(미취학)-자녀3"),
+                educationK12_1: getSpendingAmount("교육비(초중고)-자녀1"),
+                educationK12_2: getSpendingAmount("교육비(초중고)-자녀2"),
+                educationK12_3: getSpendingAmount("교육비(초중고)-자녀3"),
+                educationUniv: 0,  // 레거시 호환
+                educationUniv1: getSpendingAmount("교육비(대학)-자녀1"),
+                educationUniv2: getSpendingAmount("교육비(대학)-자녀2"),
+                educationUniv3: getSpendingAmount("교육비(대학)-자녀3"),
                 housing: getSpendingAmount("주택자금(청약저축)"),  // 레거시 호환
                 housingSubscription: getSpendingAmount("주택자금(청약저축)"),
                 housingRent: getSpendingAmount("주택자금(월세)"),
                 housingLoan: getSpendingAmount("주택자금(임차차입금)"),
                 housingMortgage: getSpendingAmount("주택자금(장기주택저당차입금)"),
-                pension: getSpendingAmount("연금저축") + getSpendingAmount("퇴직연금"),
+                pension: getSpendingAmount("연금저축") + getSpendingAmount("퇴직연금(IRP)"),  // 레거시 호환
+                pensionSavings: getSpendingAmount("연금저축"),
+                pensionIRP: getSpendingAmount("퇴직연금(IRP)"),
                 insurance: getSpendingAmount("보험료"),
                 donation: getSpendingAmount("기부금"),  // 레거시 호환 (총합)
                 donationPolitical: getSpendingAmount("기부금(정치자금)"),
@@ -1385,7 +1403,20 @@ export default function AdminPage() {
                                     <option value="현금영수증">🧾 현금영수증</option>
                                     <option value="대중교통">🚌 대중교통</option>
                                     <option value="보험료">🛡 보험료</option>
-                                    <option value="의료비">🏥 의료비</option>
+                                    <option value="의료비(난임시술비)">🏥 의료비(난임시술비)</option>
+                                    <option value="의료비(미숙아,선천성)">🏥 의료비(미숙아,선천성)</option>
+                                    <option value="의료비(본인,장애,65세,6세)">🏥 의료비(본인,장애,65세,6세)</option>
+                                    <option value="의료비(그밖부양가족)">🏥 의료비(그밖부양가족)</option>
+                                    <option value="교육비(본인)">📚 교육비(본인)</option>
+                                    <option value="교육비(미취학)-자녀1">📚 교육비(미취학)-자녀1</option>
+                                    <option value="교육비(미취학)-자녀2">📚 교육비(미취학)-자녀2</option>
+                                    <option value="교육비(미취학)-자녀3">📚 교육비(미취학)-자녀3</option>
+                                    <option value="교육비(초중고)-자녀1">📚 교육비(초중고)-자녀1</option>
+                                    <option value="교육비(초중고)-자녀2">📚 교육비(초중고)-자녀2</option>
+                                    <option value="교육비(초중고)-자녀3">📚 교육비(초중고)-자녀3</option>
+                                    <option value="교육비(대학)-자녀1">📚 교육비(대학)-자녀1</option>
+                                    <option value="교육비(대학)-자녀2">📚 교육비(대학)-자녀2</option>
+                                    <option value="교육비(대학)-자녀3">📚 교육비(대학)-자녀3</option>
                                     <option value="전통시장">🏪 전통시장</option>
                                     <option value="문화체육">🎭 문화체육</option>
                                     <option value="기부금(정치자금)">🎗️ 기부금(정치자금)</option>
@@ -2057,6 +2088,17 @@ export default function AdminPage() {
                                     className="neo-input"
                                     value={familyData.children}
                                     onChange={(e) => setFamilyData(prev => ({ ...prev, children: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold mb-2">만 8세 이상 자녀 수 <span className="text-xs text-gray-500">(자녀세액공제)</span></label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="neo-input"
+                                    value={familyData.childrenOver8}
+                                    onChange={(e) => setFamilyData(prev => ({ ...prev, childrenOver8: Math.max(0, parseInt(e.target.value) || 0) }))}
                                 />
                             </div>
                             <div>

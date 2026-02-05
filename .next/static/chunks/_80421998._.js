@@ -90,13 +90,52 @@ function hasAdminData(year) {
     }
 }
 function generateDeductionAnalysis(adminData) {
-    var _adminData_family;
-    const salary = adminData.salary.totalSalary - adminData.salary.mealAllowance;
+    var _adminData_family, _adminData_family1, _adminData_family2, _adminData_family3, _adminData_family4, _adminData_family5, _adminData_family6;
+    // 총급여액 = 급여(totalSalary) + 상여금(bonus) + 자녀학자금(childTuition) - 비과세(mealAllowance + 보육수당)
+    const childcareAllowance = (adminData.salary.childrenUnder6 || 0) * 200000 * 12; // 6세 이하 자녀당 월 20만원
+    const totalNonTaxable = (adminData.salary.mealAllowance || 0) + childcareAllowance;
+    const salary = (adminData.salary.totalSalary || 0) + (adminData.salary.bonus || 0) + (adminData.salary.childTuition || 0) - totalNonTaxable;
     const spending = adminData.spending;
     const deductions = adminData.deductions;
     // 신용카드 등 소득공제 계산
     const totalCardSpending = spending.creditCard + spending.debitCard + spending.cash + spending.publicTransport + spending.traditionalMarket + spending.culture;
     const minSpending = salary * 0.25; // 25% 문턱
+    // 실제 공제액 계산 (25% 문턱 초과분에 공제율 적용)
+    let cardDeduction = 0;
+    if (totalCardSpending > minSpending) {
+        let remaining = minSpending;
+        // 25% 문턱 소진 순서: 신용카드 → 직불카드 → 현금영수증 → 대중교통 → 전통시장 → 문화비
+        // 1. 신용카드 (15%)
+        const creditUsed = Math.min(spending.creditCard, remaining);
+        remaining -= creditUsed;
+        const creditExcess = spending.creditCard - creditUsed;
+        cardDeduction += creditExcess * 0.15;
+        // 2. 직불카드 (30%)
+        const debitUsed = Math.min(spending.debitCard, remaining);
+        remaining -= debitUsed;
+        const debitExcess = spending.debitCard - debitUsed;
+        cardDeduction += debitExcess * 0.30;
+        // 3. 현금영수증 (30%)
+        const cashUsed = Math.min(spending.cash, remaining);
+        remaining -= cashUsed;
+        const cashExcess = spending.cash - cashUsed;
+        cardDeduction += cashExcess * 0.30;
+        // 4. 대중교통 (80%)
+        const transportUsed = Math.min(spending.publicTransport, remaining);
+        remaining -= transportUsed;
+        const transportExcess = spending.publicTransport - transportUsed;
+        cardDeduction += transportExcess * 0.80;
+        // 5. 전통시장 (40%)
+        const marketUsed = Math.min(spending.traditionalMarket, remaining);
+        remaining -= marketUsed;
+        const marketExcess = spending.traditionalMarket - marketUsed;
+        cardDeduction += marketExcess * 0.40;
+        // 6. 문화비 (30%)
+        const cultureUsed = Math.min(spending.culture, remaining);
+        remaining -= cultureUsed;
+        const cultureExcess = spending.culture - cultureUsed;
+        cardDeduction += cultureExcess * 0.30;
+    }
     // 카드 사용 상태: 문턱 대비 얼마나 사용했는지
     const cardProgress = minSpending > 0 ? totalCardSpending / minSpending : 0;
     const getCardStatus = ()=>{
@@ -114,64 +153,210 @@ function generateDeductionAnalysis(adminData) {
     // 카드공제 한도: 기본 600만 + 자녀시 100만 (최대)
     const hasChildren = ((_adminData_family = adminData.family) === null || _adminData_family === void 0 ? void 0 : _adminData_family.children) >= 1;
     const cardLimit = hasChildren ? 7000000 : 6000000;
+    // 한도 적용
+    const finalCardDeduction = Math.min(cardDeduction, cardLimit);
+    // 4대보험 합계
+    const socialInsurance = adminData.salary.nationalPension + adminData.salary.healthInsurance + (adminData.salary.longTermCare || 0) + (adminData.salary.employmentInsurance || 0);
+    // 인적공제 (부양가족 수)
+    const dependents = 1 + (((_adminData_family1 = adminData.family) === null || _adminData_family1 === void 0 ? void 0 : _adminData_family1.spouse) ? 1 : 0) + (((_adminData_family2 = adminData.family) === null || _adminData_family2 === void 0 ? void 0 : _adminData_family2.children) || 0) + (((_adminData_family3 = adminData.family) === null || _adminData_family3 === void 0 ? void 0 : _adminData_family3.parents) || 0) + (((_adminData_family4 = adminData.family) === null || _adminData_family4 === void 0 ? void 0 : _adminData_family4.siblings) || 0) + (((_adminData_family5 = adminData.family) === null || _adminData_family5 === void 0 ? void 0 : _adminData_family5.foster) || 0) + (((_adminData_family6 = adminData.family) === null || _adminData_family6 === void 0 ? void 0 : _adminData_family6.recipient) || 0);
+    const personalDeduction = dependents * 1500000;
+    // 근로소득금액 계산 (총급여 - 근로소득공제)
+    let incomeDeduction = 0;
+    if (salary <= 5000000) {
+        incomeDeduction = salary * 0.7;
+    } else if (salary <= 15000000) {
+        incomeDeduction = 3500000 + (salary - 5000000) * 0.4;
+    } else if (salary <= 45000000) {
+        incomeDeduction = 7500000 + (salary - 15000000) * 0.15;
+    } else if (salary <= 100000000) {
+        incomeDeduction = 12000000 + (salary - 45000000) * 0.05;
+    } else {
+        incomeDeduction = 14750000 + (salary - 100000000) * 0.02;
+    }
+    const earnedIncome = Math.round(salary - incomeDeduction); // 근로소득금액
     const items = [
+        {
+            id: "0",
+            category: "기본공제 (인적공제)",
+            type: "소득공제",
+            amount: personalDeduction,
+            limit: personalDeduction,
+            status: "optimal",
+            thresholdInfo: "부양가족 ".concat(dependents, "명 × 150만원")
+        },
+        {
+            id: "0-1",
+            category: "4대보험",
+            type: "소득공제",
+            amount: socialInsurance,
+            limit: socialInsurance,
+            status: "optimal",
+            thresholdInfo: "납부액 전액 공제"
+        },
         {
             id: "1",
             category: "신용카드 등 사용금액",
             type: "소득공제",
-            amount: totalCardSpending,
+            amount: finalCardDeduction,
             limit: cardLimit,
             status: getCardStatus(),
-            thresholdInfo: "25% 문턱: ".concat(Math.round(minSpending).toLocaleString("ko-KR"), "원")
+            thresholdInfo: "25% 문턱: ".concat(Math.round(minSpending).toLocaleString("ko-KR"), "원\n지출: ").concat(totalCardSpending.toLocaleString("ko-KR"), "원\n초과분: ").concat(Math.max(0, totalCardSpending - Math.round(minSpending)).toLocaleString("ko-KR"), "원")
         },
         {
             id: "2",
-            category: "주택마련저축",
+            category: "주택자금(청약저축)",
             type: "소득공제",
-            amount: deductions.housing,
+            amount: deductions.housingSubscription || deductions.housing || 0,
             limit: 3000000,
-            status: getStatus(deductions.housing / 3000000)
+            status: getStatus((deductions.housingSubscription || deductions.housing || 0) / 3000000),
+            thresholdInfo: "연 300만원 한도, 40% 공제"
+        },
+        {
+            id: "2-1",
+            category: "주택자금(임차차입금)",
+            type: "소득공제",
+            amount: deductions.housingLoan || 0,
+            limit: 4000000,
+            status: getStatus((deductions.housingLoan || 0) / 4000000),
+            thresholdInfo: "연 400만원 한도, 40% 공제"
+        },
+        {
+            id: "2-2",
+            category: "주택자금(장기주택저당차입금)",
+            type: "소득공제",
+            amount: deductions.housingMortgage || 0,
+            limit: 18000000,
+            status: getStatus((deductions.housingMortgage || 0) / 18000000),
+            thresholdInfo: "연 300~1,800만원 한도\n이자 전액 공제"
+        },
+        {
+            id: "2-3",
+            category: "월세 세액공제",
+            type: "세액공제",
+            amount: Math.min(deductions.housingRent || 0, 10000000) * 0.17,
+            limit: 10000000,
+            status: getStatus((deductions.housingRent || 0) / 10000000),
+            thresholdInfo: "연 1,000만원 한도 × 17%",
+            maxBenefit: 10000000 * 0.17
         },
         {
             id: "3",
             category: "의료비",
             type: "세액공제",
-            amount: deductions.medical,
+            amount: Math.max(0, deductions.medical - salary * 0.03) * 0.15,
             limit: 7000000,
             status: deductions.medical > salary * 0.03 ? "good" : "warning",
-            thresholdInfo: "3% 문턱: ".concat(Math.round(salary * 0.03).toLocaleString("ko-KR"), "원")
+            thresholdInfo: "3% 문턱: ".concat(Math.round(salary * 0.03).toLocaleString("ko-KR"), "원\n지출: ").concat(deductions.medical.toLocaleString("ko-KR"), "원\n초과분: ").concat(Math.max(0, deductions.medical - Math.round(salary * 0.03)).toLocaleString("ko-KR"), "원\n\n난임시술비: 해당금액 × 30%\n미숙아·선천성: 해당금액 × 20%\n본인/장애/만65/6세: 해당금액 × 15%\n그 밖의 부양가족: 해당금액 × 15%"),
+            maxBenefit: 7000000 * 0.15
         },
         {
             id: "4",
             category: "교육비",
             type: "세액공제",
-            amount: deductions.education,
+            amount: Math.min(deductions.education, 3000000) * 0.15,
             limit: 3000000,
-            status: getStatus(deductions.education / 3000000)
+            status: getStatus(deductions.education / 3000000),
+            thresholdInfo: "본인: 해당금액 × 15%\n미취학·초중고: 해당금액 × 15%\n대학: 해당금액 × 15%",
+            maxBenefit: 3000000 * 0.15
         },
         {
             id: "5",
             category: "기부금",
             type: "세액공제",
-            amount: deductions.donation,
-            limit: 200000,
-            status: getStatus(deductions.donation / 200000)
+            amount: (()=>{
+                // 정치자금: 10만원이하 100/110, 초과 15%, 3천만원초과 25%
+                const political = deductions.donationPolitical || 0;
+                let politicalCredit = 0;
+                if (political <= 100000) {
+                    politicalCredit = Math.round(political * 100 / 110);
+                } else if (political <= 30000000) {
+                    politicalCredit = Math.round(100000 * 100 / 110) + Math.round((political - 100000) * 0.15);
+                } else {
+                    politicalCredit = Math.round(100000 * 100 / 110) + Math.round(29900000 * 0.15) + Math.round((political - 30000000) * 0.25);
+                }
+                // 고향사랑: 10만원이하 100/110, 초과 15%
+                const hometown = deductions.donationHometown || 0;
+                let hometownCredit = 0;
+                if (hometown <= 100000) {
+                    hometownCredit = Math.round(hometown * 100 / 110);
+                } else {
+                    hometownCredit = Math.round(100000 * 100 / 110) + Math.round((hometown - 100000) * 0.15);
+                }
+                // 고향사랑특별재난: 10만원이하 100/110, 초과 30%
+                const disaster = deductions.donationDisaster || 0;
+                let disasterCredit = 0;
+                if (disaster <= 100000) {
+                    disasterCredit = Math.round(disaster * 100 / 110);
+                } else {
+                    disasterCredit = Math.round(100000 * 100 / 110) + Math.round((disaster - 100000) * 0.3);
+                }
+                // 특례기부금: 1천만원이하 15%, 초과 30%
+                const special = deductions.donationSpecial || 0;
+                let specialCredit = 0;
+                if (special <= 10000000) {
+                    specialCredit = Math.round(special * 0.15);
+                } else {
+                    specialCredit = Math.round(10000000 * 0.15) + Math.round((special - 10000000) * 0.3);
+                }
+                // 우리사주조합: 1천만원이하 15%, 초과 30%
+                const stock = deductions.donationStock || 0;
+                let stockCredit = 0;
+                if (stock <= 10000000) {
+                    stockCredit = Math.round(stock * 0.15);
+                } else {
+                    stockCredit = Math.round(10000000 * 0.15) + Math.round((stock - 10000000) * 0.3);
+                }
+                // 일반기부금(종교): 1천만원이하 15%, 초과 30%
+                const religious = deductions.donationReligious || 0;
+                let religiousCredit = 0;
+                if (religious <= 10000000) {
+                    religiousCredit = Math.round(religious * 0.15);
+                } else {
+                    religiousCredit = Math.round(10000000 * 0.15) + Math.round((religious - 10000000) * 0.3);
+                }
+                // 일반기부금(종교 외): 1천만원이하 15%, 초과 30%
+                const nonReligious = deductions.donationNonReligious || 0;
+                let nonReligiousCredit = 0;
+                if (nonReligious <= 10000000) {
+                    nonReligiousCredit = Math.round(nonReligious * 0.15);
+                } else {
+                    nonReligiousCredit = Math.round(10000000 * 0.15) + Math.round((nonReligious - 10000000) * 0.3);
+                }
+                return politicalCredit + hometownCredit + disasterCredit + specialCredit + stockCredit + religiousCredit + nonReligiousCredit;
+            })(),
+            limit: earnedIncome,
+            status: getStatus((deductions.donationPolitical || 0) + (deductions.donationHometown || 0) + (deductions.donationDisaster || 0) + (deductions.donationSpecial || 0) + (deductions.donationStock || 0) + (deductions.donationReligious || 0) + (deductions.donationNonReligious || 0) / earnedIncome),
+            thresholdInfo: "정치자금: ".concat((deductions.donationPolitical || 0).toLocaleString("ko-KR"), "원\n고향사랑: ").concat((deductions.donationHometown || 0).toLocaleString("ko-KR"), "원\n고향사랑특별재난: ").concat((deductions.donationDisaster || 0).toLocaleString("ko-KR"), "원\n특례기부금: ").concat((deductions.donationSpecial || 0).toLocaleString("ko-KR"), "원\n우리사주조합: ").concat((deductions.donationStock || 0).toLocaleString("ko-KR"), "원\n일반기부(종교): ").concat((deductions.donationReligious || 0).toLocaleString("ko-KR"), "원\n일반기부(종교 외): ").concat((deductions.donationNonReligious || 0).toLocaleString("ko-KR"), "원"),
+            maxBenefit: earnedIncome * 0.3,
+            earnedIncome: earnedIncome,
+            donationLimits: {
+                politicalFund: earnedIncome,
+                hometownDisaster: 2000000,
+                specialDonation: earnedIncome,
+                employeeStock: Math.round(earnedIncome * 0.3),
+                generalReligious: Math.round(earnedIncome * 0.1),
+                generalNonReligious: Math.round(earnedIncome * 0.3)
+            }
         },
         {
             id: "6",
             category: "연금저축/IRP",
             type: "세액공제",
-            amount: deductions.pension,
+            amount: Math.min(deductions.pension, 9000000) * 0.12,
             limit: 9000000,
-            status: getStatus(deductions.pension / 9000000)
+            status: getStatus(deductions.pension / 9000000),
+            thresholdInfo: "".concat(Math.min(deductions.pension, 9000000).toLocaleString("ko-KR"), "원 × 12%"),
+            maxBenefit: 9000000 * 0.12
         },
         {
             id: "7",
             category: "보험료",
             type: "세액공제",
-            amount: deductions.insurance,
+            amount: Math.min(deductions.insurance, 1000000) * 0.12,
             limit: 1000000,
-            status: getStatus(deductions.insurance / 1000000)
+            status: getStatus(deductions.insurance / 1000000),
+            thresholdInfo: "".concat(Math.min(deductions.insurance, 1000000).toLocaleString("ko-KR"), "원 × 12%"),
+            maxBenefit: 1000000 * 0.12
         }
     ];
     return items;
@@ -251,6 +436,11 @@ function AdminPage() {
     const [isExcelDragging, setIsExcelDragging] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     const [excelModalMonth, setExcelModalMonth] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(1);
     const [ocrModalMonth, setOcrModalMonth] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(1);
+    // OCR 상태
+    const [ocrPreviewItems, setOcrPreviewItems] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
+    const [ocrCardType, setOcrCardType] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])("credit");
+    const [isOcrProcessing, setIsOcrProcessing] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [ocrDuplicateItems, setOcrDuplicateItems] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
     const fileInputRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
     const ocrImageInputRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
     const cardExcelInputRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
@@ -478,10 +668,9 @@ function AdminPage() {
             if (!str) return 0;
             return parseInt(str.replace(/[^0-9]/g, "")) || 0;
         };
-        // 지출 항목에서 각 카테고리 금액 추출
+        // 지출 항목에서 각 카테고리 금액 추출 (모든 월 합산)
         const getSpendingAmount = (name)=>{
-            const item = spendingItems.find((i)=>i.name.includes(name));
-            return item ? parseAmount(item.amount) : 0;
+            return spendingItems.filter((i)=>i.name.includes(name)).reduce((sum, item)=>sum + parseAmount(item.amount), 0);
         };
         const adminData = {
             year: selectedYear,
@@ -523,12 +712,23 @@ function AdminPage() {
                 singleParent: familyData.singleParent
             },
             deductions: {
-                medical: 0,
+                medical: getSpendingAmount("의료비"),
                 education: 0,
-                housing: 0,
-                pension: 0,
-                insurance: 0,
-                donation: 0
+                housing: getSpendingAmount("주택자금(청약저축)"),
+                housingSubscription: getSpendingAmount("주택자금(청약저축)"),
+                housingRent: getSpendingAmount("주택자금(월세)"),
+                housingLoan: getSpendingAmount("주택자금(임차차입금)"),
+                housingMortgage: getSpendingAmount("주택자금(장기주택저당차입금)"),
+                pension: getSpendingAmount("연금저축") + getSpendingAmount("퇴직연금"),
+                insurance: getSpendingAmount("보험료"),
+                donation: getSpendingAmount("기부금"),
+                donationPolitical: getSpendingAmount("기부금(정치자금)"),
+                donationHometown: getSpendingAmount("기부금(고향사랑)"),
+                donationDisaster: getSpendingAmount("기부금(고향사랑특별재난)"),
+                donationSpecial: getSpendingAmount("기부금(특례기부금)"),
+                donationStock: getSpendingAmount("기부금(우리사주조합)"),
+                donationReligious: getSpendingAmount("기부금(일반기부금(종교))"),
+                donationNonReligious: getSpendingAmount("기부금(일반기부금(종교 외))")
             },
             spendingItems: spendingItems,
             updatedAt: new Date().toISOString()
@@ -697,9 +897,13 @@ function AdminPage() {
         "신차",
         "자동차리스",
         "리스료",
-        "렌트료"
+        "렌트료",
+        // 선승인/가승인 (취소될 예비 승인)
+        "선승인",
+        "가승인"
     ];
     // 대중교통 키워드 (카드 사용금액에서 제외, 대중교통 항목으로 별도 집계)
+    // 참고: 택시는 대중교통 공제 대상이 아님 (일반 카드 사용)
     const PUBLIC_TRANSPORT_KEYWORDS = [
         "버스",
         "지하철",
@@ -708,7 +912,13 @@ function AdminPage() {
         "후불교통",
         "교통카드",
         "티머니",
-        "캐시비"
+        "캐시비",
+        "코레일",
+        "KTX",
+        "SRT",
+        "철도",
+        "고속버스",
+        "시외버스"
     ];
     // 보험료 키워드 (카드 사용금액에서 제외, 보험료 항목으로 별도 집계)
     const INSURANCE_KEYWORDS = [
@@ -732,6 +942,10 @@ function AdminPage() {
         "hospital",
         "메디컬",
         "medical",
+        // 의료법인/재단
+        "의료법인",
+        "의료재단",
+        "의료원",
         // 약국
         "약국",
         "pharmacy",
@@ -756,6 +970,57 @@ function AdminPage() {
         // 건강검진센터
         "건강검진",
         "검진센터"
+    ];
+    // 전통시장 키워드 (전통시장 항목으로 별도 집계)
+    const TRADITIONAL_MARKET_KEYWORDS = [
+        "전통시장",
+        "재래시장",
+        "시장",
+        "5일장",
+        "오일장",
+        "장터",
+        "농수산물시장",
+        "수산시장",
+        "농산물시장",
+        "청과시장",
+        "축산시장"
+    ];
+    // 문화체육 키워드 (문화체육 항목으로 별도 집계)
+    const CULTURE_SPORTS_KEYWORDS = [
+        // 도서
+        "서점",
+        "도서",
+        "북스",
+        "books",
+        "교보문고",
+        "영풍문고",
+        "알라딘",
+        "예스24",
+        // 공연/영화
+        "영화관",
+        "CGV",
+        "롯데시네마",
+        "메가박스",
+        "극장",
+        "공연장",
+        "뮤지컬",
+        "콘서트",
+        // 미술관/박물관
+        "미술관",
+        "박물관",
+        "전시관",
+        "갤러리",
+        // 체육시설
+        "헬스",
+        "피트니스",
+        "수영장",
+        "골프",
+        "테니스",
+        "볼링",
+        "스포츠센터",
+        "체육관",
+        "요가",
+        "필라테스"
     ];
     // 카드사 엑셀 파싱 함수
     const processCardExcelFile = (file)=>{
@@ -782,14 +1047,21 @@ function AdminPage() {
                 // 헤더 행 찾기 (첫 번째 행 또는 데이터가 시작되는 행)
                 let headerRowIndex = 0;
                 const firstRow = jsonData[0] || [];
-                // 헤더에 관련 키워드가 있는지 확인
+                // 첫 행이 요약 행인지 확인 (예: "총 사용금액: 681,235(원)")
                 const firstRowStr = firstRow.map((h)=>String(h || "").toLowerCase()).join(" ");
-                if (!firstRowStr.includes("승인") && !firstRowStr.includes("금액") && !firstRowStr.includes("가맹점")) {
-                    // 첫 행이 헤더가 아닐 수 있음, 두번째 행 확인
-                    if (jsonData.length > 1) {
-                        const secondRowStr = (jsonData[1] || []).map((h)=>String(h || "").toLowerCase()).join(" ");
-                        if (secondRowStr.includes("승인") || secondRowStr.includes("금액") || secondRowStr.includes("가맹점")) {
-                            headerRowIndex = 1;
+                const isSummaryFirstRow = firstRowStr.includes("총") && (firstRowStr.includes("금액") || firstRowStr.includes("건"));
+                // 첫 행이 요약 행이거나 헤더 키워드가 없으면 다음 행들에서 헤더 찾기
+                if (isSummaryFirstRow || !firstRowStr.includes("승인") && !firstRowStr.includes("거래일") && !firstRowStr.includes("가맹점") && !firstRowStr.includes("사용처") && !firstRowStr.includes("발행구분")) {
+                    // 2~5행 중에서 실제 헤더 행 찾기
+                    for(let i = 1; i < Math.min(5, jsonData.length); i++){
+                        const rowStr = (jsonData[i] || []).map((h)=>String(h || "").toLowerCase()).join(" ");
+                        // 헤더 행은 보통 컬럼이 여러 개이고, 헤더 키워드를 포함
+                        const hasMultipleColumns = (jsonData[i] || []).length >= 3;
+                        const hasHeaderKeywords = rowStr.includes("거래일") || rowStr.includes("가맹점") || rowStr.includes("사용처") || rowStr.includes("상호") || rowStr.includes("승인번호") || rowStr.includes("발행구분");
+                        if (hasMultipleColumns && hasHeaderKeywords) {
+                            headerRowIndex = i;
+                            console.log("Found header row at index:", i);
+                            break;
                         }
                     }
                 }
@@ -797,18 +1069,20 @@ function AdminPage() {
                 const headers = headerRow.map((h)=>String(h || "").toLowerCase());
                 console.log("Detected header row index:", headerRowIndex);
                 console.log("Headers:", headers);
-                // 열 인덱스 찾기 (카드사마다 열 순서가 다를 수 있음)
+                // 열 인덱스 찾기 (카드사/현금영수증 양식마다 열 순서가 다름)
                 // 날짜 열: 다양한 패턴 지원
-                let dateCol = headers.findIndex((h)=>h.includes("승인일") || h.includes("이용일") || h.includes("거래일") || h.includes("결제일") || h.includes("매출일") || h.includes("일자") || h.includes("date") || h.includes("날짜"));
-                // 가맹점 열: 다양한 패턴 지원
-                let merchantCol = headers.findIndex((h)=>h.includes("가맹점") || h.includes("상호") || h.includes("이용처") || h.includes("merchant") || h.includes("매장") || h.includes("사업자") || h.includes("업체") || h.includes("결제처") || h.includes("사용처"));
+                let dateCol = headers.findIndex((h)=>h.includes("승인일") || h.includes("이용일") || h.includes("거래일") || h.includes("결제일") || h.includes("매출일") || h.includes("일자") || h.includes("date") || h.includes("날짜") || h.includes("발행일") || h.includes("사용일"));
+                // 가맹점 열: 다양한 패턴 지원 (현금영수증 포함)
+                let merchantCol = headers.findIndex((h)=>h.includes("가맹점") || h.includes("상호") || h.includes("이용처") || h.includes("merchant") || h.includes("매장") || h.includes("사업자") || h.includes("업체") || h.includes("결제처") || h.includes("사용처") || h.includes("상호명"));
                 // 금액 열: 다양한 패턴 지원
-                let amountCol = headers.findIndex((h)=>h.includes("금액") || h.includes("결제금액") || h.includes("이용금액") || h.includes("승인금액") || h.includes("amount") || h.includes("원"));
-                // 취소 열: 다양한 패턴 지원
-                let cancelCol = headers.findIndex((h)=>h.includes("취소") || h.includes("cancel") || h.includes("상태") || h.includes("비고") || h.includes("구분"));
+                let amountCol = headers.findIndex((h)=>h.includes("금액") || h.includes("결제금액") || h.includes("이용금액") || h.includes("승인금액") || h.includes("amount") || h.includes("원") || h.includes("사용금액") || h.includes("거래금액") || h.includes("공제금액"));
+                // 취소/발행구분 열: 다양한 패턴 지원 (현금영수증 발행구분 포함)
+                let cancelCol = headers.findIndex((h)=>h.includes("취소") || h.includes("cancel") || h.includes("상태") || h.includes("비고") || h.includes("구분") || h.includes("발행구분") || h.includes("발행유형") || h.includes("거래구분"));
                 // 승인번호 열
-                let approvalCol = headers.findIndex((h)=>h.includes("승인번호") || h.includes("승인no") || h.includes("approval") || h.includes("거래번호") || h.includes("전표번호"));
-                console.log("Detected columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol, "cancel:", cancelCol, "approval:", approvalCol);
+                let approvalCol = headers.findIndex((h)=>h.includes("승인번호") || h.includes("승인no") || h.includes("approval") || h.includes("거래번호") || h.includes("전표번호") || h.includes("현금영수증번호"));
+                // 업종/분류 열 (전통시장, 대중교통 구분용)
+                let categoryCol = headers.findIndex((h)=>h.includes("업종") || h.includes("업태") || h.includes("분류") || h.includes("업종명") || h.includes("카테고리"));
+                console.log("Detected columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol, "cancel:", cancelCol, "approval:", approvalCol, "category:", categoryCol);
                 // 열을 찾지 못한 경우 스마트 추론
                 if (dateCol === -1 || merchantCol === -1 || amountCol === -1) {
                     var _jsonData_;
@@ -907,6 +1181,23 @@ function AdminPage() {
                     const date = String(row[dateCol] || "");
                     const merchant = String(row[merchantCol] || "");
                     const amountRaw = row[amountCol];
+                    const cancelValue = cancelCol >= 0 ? String(row[cancelCol] || "").toLowerCase() : "";
+                    const categoryValue = categoryCol >= 0 ? String(row[categoryCol] || "").toLowerCase() : "";
+                    // 발행구분 체크 - 취소/환불 건 제외
+                    const CANCEL_ISSUE_KEYWORDS = [
+                        "취소",
+                        "환불",
+                        "반품",
+                        "cancel",
+                        "refund",
+                        "취소발행"
+                    ];
+                    const isCancelIssue = CANCEL_ISSUE_KEYWORDS.some((keyword)=>cancelValue.includes(keyword));
+                    if (isCancelIssue) {
+                        excludedCnt++;
+                        console.log("❌ 취소/환불 발행 제외:", merchant, cancelValue);
+                        return;
+                    }
                     // 합계/소계 행 스킵 (엑셀 파일 하단의 총합계 행 제외)
                     const SUMMARY_KEYWORDS = [
                         "총",
@@ -979,15 +1270,23 @@ function AdminPage() {
                     if (isMedical) {
                         console.log("🏥 의료비 감지:", merchant, "-> medical");
                     }
+                    // 전통시장 체크 (업종 컬럼 또는 가맹점명 기반)
+                    const isTraditionalMarket = TRADITIONAL_MARKET_KEYWORDS.some((keyword)=>merchantLower.includes(keyword.toLowerCase()) || categoryValue.includes(keyword.toLowerCase()));
+                    // 문화체육 체크 (업종 컬럼 또는 가맹점명 기반)
+                    const isCultureSports = CULTURE_SPORTS_KEYWORDS.some((keyword)=>merchantLower.includes(keyword.toLowerCase()) || categoryValue.includes(keyword.toLowerCase()));
+                    // 업종 컬럼에서 대중교통 추가 체크
+                    const isTransportFromCategory = categoryValue.includes("대중교통") || categoryValue.includes("버스") || categoryValue.includes("지하철") || categoryValue.includes("택시") || categoryValue.includes("철도");
                     // 제외 키워드 체크 (세금, 공과금, 통신비 등)
                     const isExcluded = EXCLUDED_KEYWORDS.some((keyword)=>merchantLower.includes(keyword.toLowerCase()));
                     if (isExcluded) excludedCnt++;
-                    // 카테고리 결정 (우선순위: 제외 > 대중교통 > 보험 > 의료비 > 카드)
+                    // 카테고리 결정 (우선순위: 제외 > 대중교통 > 보험 > 의료비 > 전통시장 > 문화체육 > 카드)
                     let category = "card";
                     if (isExcluded) category = "excluded";
-                    else if (isTransport) category = "transport";
+                    else if (isTransport || isTransportFromCategory) category = "transport";
                     else if (isInsurance) category = "insurance";
                     else if (isMedical) category = "medical";
+                    else if (isTraditionalMarket) category = "market";
+                    else if (isCultureSports) category = "culture";
                     console.log("분류 결과:", merchant, "->", category);
                     parsedData.push({
                         date,
@@ -999,12 +1298,31 @@ function AdminPage() {
                     });
                 });
                 console.log("Parsed data count:", parsedData.length, "Excluded:", excludedCnt, "Skipped:", skippedCnt);
+                // 디버깅: 카테고리별 합계 출력
+                const cardTotal = parsedData.filter((i)=>i.category === "card").reduce((s, i)=>s + i.amount, 0);
+                const transportTotal = parsedData.filter((i)=>i.category === "transport").reduce((s, i)=>s + i.amount, 0);
+                const insuranceTotal = parsedData.filter((i)=>i.category === "insurance").reduce((s, i)=>s + i.amount, 0);
+                const medicalTotal = parsedData.filter((i)=>i.category === "medical").reduce((s, i)=>s + i.amount, 0);
+                const marketTotal = parsedData.filter((i)=>i.category === "market").reduce((s, i)=>s + i.amount, 0);
+                const cultureTotal = parsedData.filter((i)=>i.category === "culture").reduce((s, i)=>s + i.amount, 0);
+                const excludedTotal = parsedData.filter((i)=>i.category === "excluded").reduce((s, i)=>s + i.amount, 0);
+                const grandTotal = parsedData.reduce((s, i)=>s + i.amount, 0);
+                console.log("=== 카테고리별 합계 ===");
+                console.log("신용카드:", cardTotal.toLocaleString());
+                console.log("대중교통:", transportTotal.toLocaleString());
+                console.log("보험료:", insuranceTotal.toLocaleString());
+                console.log("의료비:", medicalTotal.toLocaleString());
+                console.log("전통시장:", marketTotal.toLocaleString());
+                console.log("문화체육:", cultureTotal.toLocaleString());
+                console.log("제외:", excludedTotal.toLocaleString());
+                console.log("총합계:", grandTotal.toLocaleString());
+                console.log("======================");
                 if (parsedData.length === 0) {
                     showNotification("error", "파싱된 데이터가 없습니다. (스킵: ".concat(skippedCnt, "건, 제외: ").concat(excludedCnt, "건)"));
                 } else {
                     showNotification("success", "".concat(parsedData.length, "건의 거래 데이터를 찾았습니다."));
                 }
-                setCardExcelPreview(parsedData.slice(0, 50)); // 미리보기 50개
+                setCardExcelPreview(parsedData); // 전체 데이터 저장 (합계 계산용)
                 setExcludedCount(excludedCnt);
             } catch (error) {
                 console.error("Excel parsing error:", error);
@@ -1053,6 +1371,8 @@ function AdminPage() {
         const transportAmount = cardExcelPreview.filter((item)=>item.category === "transport").reduce((sum, item)=>sum + item.amount, 0);
         const insuranceAmount = cardExcelPreview.filter((item)=>item.category === "insurance").reduce((sum, item)=>sum + item.amount, 0);
         const medicalAmount = cardExcelPreview.filter((item)=>item.category === "medical").reduce((sum, item)=>sum + item.amount, 0);
+        const marketAmount = cardExcelPreview.filter((item)=>item.category === "market").reduce((sum, item)=>sum + item.amount, 0);
+        const cultureAmount = cardExcelPreview.filter((item)=>item.category === "culture").reduce((sum, item)=>sum + item.amount, 0);
         // 카테고리별 세부 내역 추출
         const cardDetails = cardExcelPreview.filter((item)=>item.category === "card").map((item)=>({
                 date: item.date,
@@ -1070,6 +1390,16 @@ function AdminPage() {
                 amount: item.amount
             }));
         const medicalDetails = cardExcelPreview.filter((item)=>item.category === "medical").map((item)=>({
+                date: item.date,
+                merchant: item.merchant,
+                amount: item.amount
+            }));
+        const marketDetails = cardExcelPreview.filter((item)=>item.category === "market").map((item)=>({
+                date: item.date,
+                merchant: item.merchant,
+                amount: item.amount
+            }));
+        const cultureDetails = cardExcelPreview.filter((item)=>item.category === "culture").map((item)=>({
                 date: item.date,
                 merchant: item.merchant,
                 amount: item.amount
@@ -1113,17 +1443,21 @@ function AdminPage() {
         addOrUpdateItem("대중교통", transportAmount, transportDetails);
         addOrUpdateItem("보험료", insuranceAmount, insuranceDetails);
         addOrUpdateItem("의료비", medicalAmount, medicalDetails);
+        addOrUpdateItem("전통시장", marketAmount, marketDetails);
+        addOrUpdateItem("문화체육", cultureAmount, cultureDetails);
         // 결과 메시지
         const messages = [];
         if (cardAmount > 0) messages.push("".concat(cardName, " ").concat(cardAmount.toLocaleString("ko-KR"), "원"));
         if (transportAmount > 0) messages.push("대중교통 ".concat(transportAmount.toLocaleString("ko-KR"), "원"));
         if (insuranceAmount > 0) messages.push("보험료 ".concat(insuranceAmount.toLocaleString("ko-KR"), "원"));
         if (medicalAmount > 0) messages.push("의료비 ".concat(medicalAmount.toLocaleString("ko-KR"), "원"));
+        if (marketAmount > 0) messages.push("전통시장 ".concat(marketAmount.toLocaleString("ko-KR"), "원"));
+        if (cultureAmount > 0) messages.push("문화체육 ".concat(cultureAmount.toLocaleString("ko-KR"), "원"));
         showNotification("success", "".concat(messages.join(", "), " 추가됨 (제외: ").concat(excludedCount, "건)"));
         handleCardExcelModalClose();
     };
     // OCR Image Upload Functions
-    const processImageFiles = (files)=>{
+    const processImageFiles = async (files)=>{
         if (!files) return;
         const maxImages = 10;
         const currentCount = capturedImages.length;
@@ -1133,21 +1467,124 @@ function AdminPage() {
             return;
         }
         const filesToProcess = Array.from(files).slice(0, remainingSlots);
-        filesToProcess.forEach((file)=>{
+        const newImages = [];
+        // 이미지 파일 읽기
+        for (const file of filesToProcess){
             if (file.type.startsWith("image/")) {
-                const reader = new FileReader();
-                reader.onload = (event)=>{
-                    setCapturedImages((prev)=>{
+                const base64 = await new Promise((resolve)=>{
+                    const reader = new FileReader();
+                    reader.onload = (event)=>{
                         var _event_target;
-                        return [
-                            ...prev,
-                            (_event_target = event.target) === null || _event_target === void 0 ? void 0 : _event_target.result
-                        ];
-                    });
-                };
-                reader.readAsDataURL(file);
+                        return resolve((_event_target = event.target) === null || _event_target === void 0 ? void 0 : _event_target.result);
+                    };
+                    reader.readAsDataURL(file);
+                });
+                newImages.push(base64);
             }
-        });
+        }
+        if (newImages.length === 0) return;
+        setCapturedImages((prev)=>[
+                ...prev,
+                ...newImages
+            ]);
+        // 자동 OCR 처리
+        setIsOcrProcessing(true);
+        showNotification("success", "".concat(newImages.length, "개 이미지 분석 중..."));
+        try {
+            const response = await fetch('/api/ocr', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    images: newImages
+                })
+            });
+            if (!response.ok) {
+                throw new Error('OCR API 요청 실패');
+            }
+            const data = await response.json();
+            if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+                // 선택한 카드 타입에 맞게 기본 카테고리 적용
+                const cardTypeToCategory = {
+                    credit: "신용카드",
+                    debit: "직불카드",
+                    cash: "현금영수증"
+                };
+                const defaultCategory = cardTypeToCategory[ocrCardType];
+                const adjustedItems = data.items.map((item)=>({
+                        ...item,
+                        // AI가 특수 카테고리(교통, 의료 등)를 감지하지 않았으면 선택한 카드 타입 적용
+                        category: [
+                            "신용카드",
+                            "체크카드",
+                            "현금영수증",
+                            "직불카드"
+                        ].includes(item.category) ? defaultCategory : item.category
+                    }));
+                // 중복 방지: 동일한 가맹점+금액 조합 필터링
+                // 1. 새로 추가될 항목들 간의 중복을 추적 (같은 이미지가 여러 번 업로드된 경우)
+                const seenItems = {};
+                const uniqueAdjustedItems = [];
+                const internalDuplicateList = [];
+                adjustedItems.forEach((item)=>{
+                    const key = "".concat(item.merchant, "-").concat(item.amount);
+                    if (!seenItems[key]) {
+                        seenItems[key] = true;
+                        uniqueAdjustedItems.push(item);
+                    } else {
+                        // 중복 항목 기록
+                        internalDuplicateList.push({
+                            merchant: item.merchant,
+                            amount: item.amount
+                        });
+                    }
+                });
+                // 2. 기존 항목과의 중복 제거
+                setOcrPreviewItems((prev)=>{
+                    const externalDuplicateList = [];
+                    const newItems = uniqueAdjustedItems.filter((newItem)=>{
+                        const exists = prev.some((existing)=>existing.merchant === newItem.merchant && existing.amount === newItem.amount);
+                        if (exists) {
+                            externalDuplicateList.push({
+                                merchant: newItem.merchant,
+                                amount: newItem.amount
+                            });
+                        }
+                        return !exists;
+                    });
+                    // 모든 중복 항목 합치기
+                    const allDuplicates = [
+                        ...internalDuplicateList,
+                        ...externalDuplicateList
+                    ];
+                    if (allDuplicates.length > 0) {
+                        setOcrDuplicateItems((prevItems)=>[
+                                ...prevItems,
+                                ...allDuplicates
+                            ]);
+                        if (newItems.length > 0) {
+                            showNotification("success", "".concat(newItems.length, "개 항목 추가 (").concat(allDuplicates.length, "개 중복 제외)"));
+                        } else {
+                            showNotification("error", "모든 항목이 이미 추가되어 있습니다.");
+                        }
+                    } else if (newItems.length > 0) {
+                        showNotification("success", "".concat(newItems.length, "개 항목이 자동 인식되었습니다!"));
+                    }
+                    return [
+                        ...prev,
+                        ...newItems
+                    ];
+                });
+            } else {
+                showNotification("error", "이미지에서 지출 항목을 찾을 수 없습니다.");
+            }
+        } catch (error) {
+            console.error('OCR Error:', error);
+            showNotification("error", "OCR 분석에 실패했습니다.");
+        } finally{
+            setIsOcrProcessing(false);
+        }
     };
     const handleOcrImageUpload = (e)=>{
         processImageFiles(e.target.files);
@@ -1172,18 +1609,86 @@ function AdminPage() {
         setShowCameraModal(true);
         setCapturedImages([]);
         setOcrModalMonth(selectedMonth);
+        setOcrPreviewItems([]);
+        setOcrCardType("credit");
+        setOcrDuplicateItems([]);
     };
     const handleOcrModalClose = ()=>{
         setShowCameraModal(false);
         setCapturedImages([]);
+        setOcrPreviewItems([]);
         setIsDragging(false);
         if (ocrImageInputRef.current) {
             ocrImageInputRef.current.value = "";
         }
     };
+    // OCR 수동 입력 항목 삭제
+    const handleRemoveOcrItem = (index)=>{
+        setOcrPreviewItems((prev)=>prev.filter((_, i)=>i !== index));
+    };
     const handleUseImage = ()=>{
-        // In a real implementation, this would send the images to an OCR API
-        showNotification("success", "".concat(ocrModalMonth, "월에 ").concat(capturedImages.length, "개 이미지가 업로드되었습니다. OCR 분석은 서버 연동이 필요합니다."));
+        if (ocrPreviewItems.length === 0) {
+            showNotification("error", "최소 1개 이상의 항목을 입력해주세요.");
+            return;
+        }
+        // 카테고리별 금액 합계 및 세부 내역 추출
+        const categoryTotals = {};
+        ocrPreviewItems.forEach((item)=>{
+            if (!categoryTotals[item.category]) {
+                categoryTotals[item.category] = {
+                    amount: 0,
+                    details: []
+                };
+            }
+            categoryTotals[item.category].amount += item.amount;
+            categoryTotals[item.category].details.push({
+                date: new Date().toISOString().split('T')[0],
+                merchant: item.merchant,
+                amount: item.amount
+            });
+        });
+        // 항목 추가 헬퍼 함수
+        const addOrUpdateItem = (name, amount, details)=>{
+            if (amount <= 0) return;
+            setSpendingItems((prev)=>{
+                const existingIndex = prev.findIndex((i)=>i.name === name && i.month === selectedSpendingMonth);
+                if (existingIndex >= 0) {
+                    const currentAmount = parseInt(prev[existingIndex].amount.replace(/[^0-9]/g, "") || "0");
+                    const newAmount = currentAmount + amount;
+                    const existingDetails = prev[existingIndex].details || [];
+                    return prev.map((item, index)=>index === existingIndex ? {
+                            ...item,
+                            amount: newAmount.toLocaleString("ko-KR"),
+                            details: [
+                                ...existingDetails,
+                                ...details
+                            ]
+                        } : item);
+                } else {
+                    return [
+                        ...prev,
+                        {
+                            id: Date.now().toString() + name + selectedSpendingMonth,
+                            name,
+                            amount: amount.toLocaleString("ko-KR"),
+                            month: selectedSpendingMonth,
+                            details
+                        }
+                    ];
+                }
+            });
+        };
+        // 각 카테고리별로 항목 추가
+        Object.entries(categoryTotals).forEach((param)=>{
+            let [category, data] = param;
+            addOrUpdateItem(category, data.amount, data.details);
+        });
+        // 결과 메시지
+        const messages = Object.entries(categoryTotals).map((param)=>{
+            let [cat, data] = param;
+            return "".concat(cat, " ").concat(data.amount.toLocaleString("ko-KR"), "원");
+        });
+        showNotification("success", "".concat(messages.join(", "), " 추가됨"));
         handleOcrModalClose();
     };
     const handleSalaryInputChange = (field, value)=>{
@@ -1209,7 +1714,7 @@ function AdminPage() {
                 className: "hidden"
             }, void 0, false, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1025,
+                lineNumber: 1324,
                 columnNumber: 13
             }, this),
             notification && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1219,13 +1724,13 @@ function AdminPage() {
                         size: 20
                     }, void 0, false, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1039,
+                        lineNumber: 1338,
                         columnNumber: 56
                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$circle$2d$alert$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__AlertCircle$3e$__["AlertCircle"], {
                         size: 20
                     }, void 0, false, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1039,
+                        lineNumber: 1338,
                         columnNumber: 84
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1233,13 +1738,13 @@ function AdminPage() {
                         children: notification.message
                     }, void 0, false, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1040,
+                        lineNumber: 1339,
                         columnNumber: 21
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1035,
+                lineNumber: 1334,
                 columnNumber: 17
             }, this),
             showAddItemModal && typeof document !== 'undefined' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2d$dom$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["createPortal"])(/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1255,7 +1760,7 @@ function AdminPage() {
                                     children: "수동 항목 추가"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1049,
+                                    lineNumber: 1348,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1265,18 +1770,18 @@ function AdminPage() {
                                         size: 20
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1059,
+                                        lineNumber: 1358,
                                         columnNumber: 33
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1050,
+                                    lineNumber: 1349,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1048,
+                            lineNumber: 1347,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1289,7 +1794,7 @@ function AdminPage() {
                                             children: "월 선택"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1065,
+                                            lineNumber: 1364,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("select", {
@@ -1317,18 +1822,18 @@ function AdminPage() {
                                                     ]
                                                 }, m, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1072,
+                                                    lineNumber: 1371,
                                                     columnNumber: 41
                                                 }, this))
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1066,
+                                            lineNumber: 1365,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1064,
+                                    lineNumber: 1363,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1338,24 +1843,200 @@ function AdminPage() {
                                             children: "항목명"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1077,
+                                            lineNumber: 1376,
                                             columnNumber: 33
                                         }, this),
-                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
-                                            type: "text",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("select", {
                                             className: "neo-input",
-                                            placeholder: "예: 의료비, 교육비",
                                             value: newItemName,
-                                            onChange: (e)=>setNewItemName(e.target.value)
-                                        }, void 0, false, {
+                                            onChange: (e)=>setNewItemName(e.target.value),
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "",
+                                                    children: "-- 항목 선택 --"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1382,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "신용카드",
+                                                    children: "💳 신용카드"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1383,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "직불카드",
+                                                    children: "💳 직불카드"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1384,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "현금영수증",
+                                                    children: "🧾 현금영수증"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1385,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "대중교통",
+                                                    children: "🚌 대중교통"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1386,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "보험료",
+                                                    children: "🛡 보험료"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1387,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "의료비",
+                                                    children: "🏥 의료비"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1388,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "전통시장",
+                                                    children: "🏪 전통시장"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1389,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "문화체육",
+                                                    children: "🎭 문화체육"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1390,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "기부금(정치자금)",
+                                                    children: "🎗️ 기부금(정치자금)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1391,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "기부금(고향사랑)",
+                                                    children: "🎗️ 기부금(고향사랑)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1392,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "기부금(고향사랑특별재난)",
+                                                    children: "🎗️ 기부금(고향사랑특별재난)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1393,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "기부금(특례기부금)",
+                                                    children: "🎗️ 기부금(특례기부금)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1394,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "기부금(우리사주조합)",
+                                                    children: "🎗️ 기부금(우리사주조합)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1395,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "기부금(일반기부금(종교))",
+                                                    children: "🎗️ 기부금(일반기부금(종교))"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1396,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "기부금(일반기부금(종교 외))",
+                                                    children: "🎗️ 기부금(일반기부금(종교 외))"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1397,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "연금저축",
+                                                    children: "💰 연금저축"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1398,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "퇴직연금(IRP)",
+                                                    children: "🏦 퇴직연금(IRP)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1399,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "주택자금(청약저축)",
+                                                    children: "🏠 주택자금(청약저축)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1400,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "주택자금(월세)",
+                                                    children: "🏠 주택자금(월세)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1401,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "주택자금(임차차입금)",
+                                                    children: "🏠 주택자금(임차차입금)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1402,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
+                                                    value: "주택자금(장기주택저당차입금)",
+                                                    children: "🏠 주택자금(장기주택저당차입금)"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1403,
+                                                    columnNumber: 37
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1078,
+                                            lineNumber: 1377,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1076,
+                                    lineNumber: 1375,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1365,7 +2046,7 @@ function AdminPage() {
                                             children: "금액 (원)"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1087,
+                                            lineNumber: 1407,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -1381,19 +2062,19 @@ function AdminPage() {
                                             }
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1088,
+                                            lineNumber: 1408,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1086,
+                                    lineNumber: 1406,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1063,
+                            lineNumber: 1362,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1405,7 +2086,7 @@ function AdminPage() {
                                     children: "취소"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1104,
+                                    lineNumber: 1424,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1414,24 +2095,24 @@ function AdminPage() {
                                     children: "추가"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1115,
+                                    lineNumber: 1435,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1103,
+                            lineNumber: 1423,
                             columnNumber: 25
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/admin/page.tsx",
-                    lineNumber: 1047,
+                    lineNumber: 1346,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1046,
+                lineNumber: 1345,
                 columnNumber: 17
             }, this), document.body),
             showCameraModal && typeof document !== 'undefined' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2d$dom$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["createPortal"])(/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1444,10 +2125,10 @@ function AdminPage() {
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
                                     className: "text-xl font-black",
-                                    children: "이미지 업로드"
+                                    children: "이미지 업로드 (OCR)"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1137,
+                                    lineNumber: 1457,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1457,18 +2138,62 @@ function AdminPage() {
                                         size: 20
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1147,
+                                        lineNumber: 1467,
                                         columnNumber: 33
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1138,
+                                    lineNumber: 1458,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1136,
+                            lineNumber: 1456,
+                            columnNumber: 25
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                            className: "font-bold text-base mb-2",
+                            children: "📋 사용 내역 선택"
+                        }, void 0, false, {
+                            fileName: "[project]/app/admin/page.tsx",
+                            lineNumber: 1472,
+                            columnNumber: 25
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                            className: "flex gap-2 mb-4",
+                            children: [
+                                {
+                                    type: "credit",
+                                    label: "💳 신용카드",
+                                    btnId: "ocrTabCredit"
+                                },
+                                {
+                                    type: "debit",
+                                    label: "💳 직불카드",
+                                    btnId: "ocrTabDebit"
+                                },
+                                {
+                                    type: "cash",
+                                    label: "🧾 현금영수증",
+                                    btnId: "ocrTabCash"
+                                }
+                            ].map((param)=>{
+                                let { type, label, btnId } = param;
+                                return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                    onClick: ()=>handleButtonClick(btnId, ()=>!capturedImages.length && setOcrCardType(type)),
+                                    disabled: capturedImages.length > 0 && ocrCardType !== type,
+                                    className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("flex-1 py-3 font-bold border-2 border-black transition-all", ocrCardType === type ? clickedBtn === btnId ? "bg-neo-cyan translate-x-[3px] translate-y-[3px] shadow-none" : "bg-neo-cyan shadow-[3px_3px_0px_0px_#000]" : capturedImages.length > 0 ? "bg-gray-200 cursor-not-allowed opacity-50" : clickedBtn === btnId ? "bg-neo-yellow translate-x-[2px] translate-y-[2px] shadow-none" : "bg-white hover:bg-gray-100 shadow-[2px_2px_0px_0px_#000]"),
+                                    children: label
+                                }, type, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1479,
+                                    columnNumber: 33
+                                }, this);
+                            })
+                        }, void 0, false, {
+                            fileName: "[project]/app/admin/page.tsx",
+                            lineNumber: 1473,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1491,7 +2216,7 @@ function AdminPage() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1164,
+                                        lineNumber: 1514,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1505,7 +2230,7 @@ function AdminPage() {
                                                         className: "w-full h-full object-cover"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1168,
+                                                        lineNumber: 1518,
                                                         columnNumber: 49
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1518,37 +2243,61 @@ function AdminPage() {
                                                             size: 12
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/admin/page.tsx",
-                                                            lineNumber: 1176,
+                                                            lineNumber: 1526,
                                                             columnNumber: 53
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1169,
+                                                        lineNumber: 1519,
                                                         columnNumber: 49
                                                     }, this)
                                                 ]
                                             }, index, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1167,
+                                                lineNumber: 1517,
                                                 columnNumber: 45
                                             }, this))
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1165,
+                                        lineNumber: 1515,
                                         columnNumber: 37
                                     }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    isOcrProcessing ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: "flex items-center justify-center gap-2 mt-3",
+                                        children: [
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$refresh$2d$cw$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__RefreshCw$3e$__["RefreshCw"], {
+                                                size: 16,
+                                                className: "animate-spin text-neo-cyan"
+                                            }, void 0, false, {
+                                                fileName: "[project]/app/admin/page.tsx",
+                                                lineNumber: 1533,
+                                                columnNumber: 45
+                                            }, this),
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                className: "text-sm font-bold text-neo-cyan",
+                                                children: "AI 분석 중..."
+                                            }, void 0, false, {
+                                                fileName: "[project]/app/admin/page.tsx",
+                                                lineNumber: 1534,
+                                                columnNumber: 45
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "[project]/app/admin/page.tsx",
+                                        lineNumber: 1532,
+                                        columnNumber: 41
+                                    }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                         className: "text-center text-xs text-gray-500 mt-3",
                                         children: "클릭 또는 드래그하여 더 추가"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1181,
-                                        columnNumber: 37
+                                        lineNumber: 1537,
+                                        columnNumber: 41
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1163,
+                                lineNumber: 1513,
                                 columnNumber: 33
                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
                                 children: [
@@ -1557,7 +2306,7 @@ function AdminPage() {
                                         className: "mx-auto mb-2 text-gray-400"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1185,
+                                        lineNumber: 1542,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1565,7 +2314,7 @@ function AdminPage() {
                                         children: "이미지를 드래그하거나"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1186,
+                                        lineNumber: 1543,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1578,7 +2327,7 @@ function AdminPage() {
                                         children: "파일 선택"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1187,
+                                        lineNumber: 1544,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1586,14 +2335,14 @@ function AdminPage() {
                                         children: "영수증, 원천징수영수증 등"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1196,
+                                        lineNumber: 1553,
                                         columnNumber: 37
                                     }, this)
                                 ]
                             }, void 0, true)
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1152,
+                            lineNumber: 1502,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -1605,32 +2354,369 @@ function AdminPage() {
                             className: "hidden"
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1201,
+                            lineNumber: 1558,
                             columnNumber: 25
+                        }, this),
+                        ocrPreviewItems.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                            className: "mb-6",
+                            children: [
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: "flex justify-between items-center mb-3",
+                                    children: [
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                            className: "font-bold",
+                                            children: "입력된 항목 미리보기"
+                                        }, void 0, false, {
+                                            fileName: "[project]/app/admin/page.tsx",
+                                            lineNumber: 1571,
+                                            columnNumber: 37
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                            className: "text-sm text-gray-500",
+                                            children: [
+                                                "총 ",
+                                                ocrPreviewItems.length,
+                                                "건"
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "[project]/app/admin/page.tsx",
+                                            lineNumber: 1572,
+                                            columnNumber: 37
+                                        }, this)
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1570,
+                                    columnNumber: 33
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: "max-h-48 overflow-y-auto border-2 border-black",
+                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("table", {
+                                        className: "w-full text-sm",
+                                        children: [
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("thead", {
+                                                className: "bg-gray-100 sticky top-0",
+                                                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
+                                                    children: [
+                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
+                                                            className: "p-2 text-left border-b-2 border-black",
+                                                            children: "분류"
+                                                        }, void 0, false, {
+                                                            fileName: "[project]/app/admin/page.tsx",
+                                                            lineNumber: 1580,
+                                                            columnNumber: 49
+                                                        }, this),
+                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
+                                                            className: "p-2 text-left border-b-2 border-black",
+                                                            children: "가맹점"
+                                                        }, void 0, false, {
+                                                            fileName: "[project]/app/admin/page.tsx",
+                                                            lineNumber: 1581,
+                                                            columnNumber: 49
+                                                        }, this),
+                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
+                                                            className: "p-2 text-right border-b-2 border-black",
+                                                            children: "금액"
+                                                        }, void 0, false, {
+                                                            fileName: "[project]/app/admin/page.tsx",
+                                                            lineNumber: 1582,
+                                                            columnNumber: 49
+                                                        }, this),
+                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
+                                                            className: "p-2 text-center border-b-2 border-black",
+                                                            children: "삭제"
+                                                        }, void 0, false, {
+                                                            fileName: "[project]/app/admin/page.tsx",
+                                                            lineNumber: 1583,
+                                                            columnNumber: 49
+                                                        }, this)
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1579,
+                                                    columnNumber: 45
+                                                }, this)
+                                            }, void 0, false, {
+                                                fileName: "[project]/app/admin/page.tsx",
+                                                lineNumber: 1578,
+                                                columnNumber: 41
+                                            }, this),
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
+                                                children: ocrPreviewItems.map((item, idx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
+                                                        className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])(item.category === "대중교통" && "bg-blue-50", item.category === "보험료" && "bg-purple-50", item.category === "의료비" && "bg-green-50", item.category === "전통시장" && "bg-orange-50", item.category === "문화체육" && "bg-pink-50"),
+                                                        children: [
+                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
+                                                                className: "p-2 border-b",
+                                                                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                                    className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("text-xs px-2 py-1 rounded", item.category === "신용카드" && "bg-green-100 text-green-600", item.category === "체크카드" && "bg-cyan-100 text-cyan-600", item.category === "현금영수증" && "bg-yellow-100 text-yellow-600", item.category === "대중교통" && "bg-blue-100 text-blue-600", item.category === "보험료" && "bg-purple-100 text-purple-600", item.category === "의료비" && "bg-teal-100 text-teal-600", item.category === "전통시장" && "bg-orange-100 text-orange-600", item.category === "문화체육" && "bg-pink-100 text-pink-600"),
+                                                                    children: item.category
+                                                                }, void 0, false, {
+                                                                    fileName: "[project]/app/admin/page.tsx",
+                                                                    lineNumber: 1596,
+                                                                    columnNumber: 57
+                                                                }, this)
+                                                            }, void 0, false, {
+                                                                fileName: "[project]/app/admin/page.tsx",
+                                                                lineNumber: 1595,
+                                                                columnNumber: 53
+                                                            }, this),
+                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
+                                                                className: "p-2 border-b",
+                                                                children: item.merchant
+                                                            }, void 0, false, {
+                                                                fileName: "[project]/app/admin/page.tsx",
+                                                                lineNumber: 1610,
+                                                                columnNumber: 53
+                                                            }, this),
+                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
+                                                                className: "p-2 border-b text-right",
+                                                                children: [
+                                                                    item.amount.toLocaleString(),
+                                                                    "원"
+                                                                ]
+                                                            }, void 0, true, {
+                                                                fileName: "[project]/app/admin/page.tsx",
+                                                                lineNumber: 1611,
+                                                                columnNumber: 53
+                                                            }, this),
+                                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
+                                                                className: "p-2 border-b text-center",
+                                                                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                                                    onClick: ()=>handleRemoveOcrItem(idx),
+                                                                    className: "text-red-500 hover:bg-red-100 p-1 rounded",
+                                                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$x$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__X$3e$__["X"], {
+                                                                        size: 14
+                                                                    }, void 0, false, {
+                                                                        fileName: "[project]/app/admin/page.tsx",
+                                                                        lineNumber: 1617,
+                                                                        columnNumber: 61
+                                                                    }, this)
+                                                                }, void 0, false, {
+                                                                    fileName: "[project]/app/admin/page.tsx",
+                                                                    lineNumber: 1613,
+                                                                    columnNumber: 57
+                                                                }, this)
+                                                            }, void 0, false, {
+                                                                fileName: "[project]/app/admin/page.tsx",
+                                                                lineNumber: 1612,
+                                                                columnNumber: 53
+                                                            }, this)
+                                                        ]
+                                                    }, idx, true, {
+                                                        fileName: "[project]/app/admin/page.tsx",
+                                                        lineNumber: 1588,
+                                                        columnNumber: 49
+                                                    }, this))
+                                            }, void 0, false, {
+                                                fileName: "[project]/app/admin/page.tsx",
+                                                lineNumber: 1586,
+                                                columnNumber: 41
+                                            }, this)
+                                        ]
+                                    }, void 0, true, {
+                                        fileName: "[project]/app/admin/page.tsx",
+                                        lineNumber: 1577,
+                                        columnNumber: 37
+                                    }, this)
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1576,
+                                    columnNumber: 33
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: "mt-3 p-3 bg-neo-yellow/30 border-2 border-black space-y-1",
+                                    children: [
+                                        Object.entries(ocrPreviewItems.reduce((acc, item)=>{
+                                            acc[item.category] = (acc[item.category] || 0) + item.amount;
+                                            return acc;
+                                        }, {})).map((param)=>{
+                                            let [category, amount] = param;
+                                            return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: "flex justify-between text-sm font-bold",
+                                                children: [
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        children: [
+                                                            category,
+                                                            ":"
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "[project]/app/admin/page.tsx",
+                                                        lineNumber: 1635,
+                                                        columnNumber: 45
+                                                    }, this),
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        children: [
+                                                            amount.toLocaleString(),
+                                                            "원"
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "[project]/app/admin/page.tsx",
+                                                        lineNumber: 1636,
+                                                        columnNumber: 45
+                                                    }, this)
+                                                ]
+                                            }, category, true, {
+                                                fileName: "[project]/app/admin/page.tsx",
+                                                lineNumber: 1634,
+                                                columnNumber: 41
+                                            }, this);
+                                        }),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: "border-t border-black pt-1 mt-2 flex justify-between font-bold",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    children: "총합계:"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1640,
+                                                    columnNumber: 41
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    children: [
+                                                        ocrPreviewItems.reduce((s, i)=>s + i.amount, 0).toLocaleString(),
+                                                        "원"
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 1641,
+                                                    columnNumber: 41
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "[project]/app/admin/page.tsx",
+                                            lineNumber: 1639,
+                                            columnNumber: 37
+                                        }, this)
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1627,
+                                    columnNumber: 33
+                                }, this),
+                                ocrDuplicateItems.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: "mt-3 p-3 bg-neo-orange/20 border-2 border-neo-orange text-sm",
+                                    children: [
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                            className: "font-bold text-neo-orange mb-2",
+                                            children: "⚠️ 중복 이미지 감지됨"
+                                        }, void 0, false, {
+                                            fileName: "[project]/app/admin/page.tsx",
+                                            lineNumber: 1648,
+                                            columnNumber: 41
+                                        }, this),
+                                        [
+                                            ...new Map(ocrDuplicateItems.map((item)=>[
+                                                    "".concat(item.merchant, "-").concat(item.amount),
+                                                    item
+                                                ])).values()
+                                        ].map((item, idx)=>{
+                                            const count = ocrDuplicateItems.filter((d)=>d.merchant === item.merchant && d.amount === item.amount).length;
+                                            return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                className: "text-gray-700",
+                                                children: [
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "font-semibold",
+                                                        children: item.merchant
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/app/admin/page.tsx",
+                                                        lineNumber: 1653,
+                                                        columnNumber: 53
+                                                    }, this),
+                                                    " (",
+                                                    item.amount.toLocaleString(),
+                                                    "원) - ",
+                                                    count,
+                                                    "건 중복, 1건만 적용"
+                                                ]
+                                            }, idx, true, {
+                                                fileName: "[project]/app/admin/page.tsx",
+                                                lineNumber: 1652,
+                                                columnNumber: 49
+                                            }, this);
+                                        })
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1647,
+                                    columnNumber: 37
+                                }, this)
+                            ]
+                        }, void 0, true, {
+                            fileName: "[project]/app/admin/page.tsx",
+                            lineNumber: 1569,
+                            columnNumber: 29
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                             className: "mb-6 p-3 bg-gray-100 border-2 border-black text-sm",
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                    className: "font-bold mb-1",
-                                    children: "📋 지원 이미지:"
+                                    className: "font-bold mb-2",
+                                    children: "📋 자동 분류 안내:"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1212,
+                                    lineNumber: 1664,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                    className: "text-gray-600",
-                                    children: "영수증, 원천징수영수증, 카드명세서 등 (최대 10개)"
+                                    className: "text-blue-600",
+                                    children: "🚌 대중교통: 버스, 지하철, 모바일이즘 → 대중교통 항목으로 분류"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1213,
+                                    lineNumber: 1665,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-purple-600",
+                                    children: "🛡 보험료: 메리츠화재, DB손해보험 등 → 보험료 항목으로 분류"
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1666,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-green-600",
+                                    children: "🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류"
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1667,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-orange-600",
+                                    children: "🏪 전통시장: 전통시장, 재래시장 등 → 전통시장 항목으로 분류"
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1668,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-pink-600",
+                                    children: "🎭 문화체육: 서점, 도서, 영화관, 헬스 등 → 문화체육 항목으로 분류"
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1669,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-red-500",
+                                    children: "❌ 제외: 세금, 공과금, 통신비, 도로통행료 → 공제 불가"
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1670,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-gray-500 mt-1",
+                                    children: "취소된 거래는 자동으로 제외됩니다."
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 1671,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1211,
+                            lineNumber: 1663,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1642,37 +2728,37 @@ function AdminPage() {
                                     children: "취소"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1218,
+                                    lineNumber: 1676,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
                                     onClick: handleUseImage,
-                                    disabled: capturedImages.length === 0,
-                                    className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("px-4 py-2 font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all", capturedImages.length > 0 ? "bg-neo-cyan hover:shadow-[2px_2px_0px_0px_#000]" : "bg-gray-200 cursor-not-allowed opacity-50"),
+                                    disabled: ocrPreviewItems.length === 0,
+                                    className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("px-4 py-2 font-bold border-2 border-black shadow-[3px_3px_0px_0px_#000] transition-all", ocrPreviewItems.length > 0 ? "bg-neo-cyan hover:shadow-[2px_2px_0px_0px_#000]" : "bg-gray-200 cursor-not-allowed opacity-50"),
                                     children: [
                                         "적용하기 ",
-                                        capturedImages.length > 0 && "(".concat(capturedImages.length, "개)")
+                                        ocrPreviewItems.length > 0 && "(".concat(ocrPreviewItems.length, "건)")
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1229,
+                                    lineNumber: 1687,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1217,
+                            lineNumber: 1675,
                             columnNumber: 25
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/admin/page.tsx",
-                    lineNumber: 1135,
+                    lineNumber: 1455,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1134,
+                lineNumber: 1454,
                 columnNumber: 17
             }, this), document.body),
             showExcelModal && typeof document !== 'undefined' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2d$dom$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["createPortal"])(/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1692,14 +2778,14 @@ function AdminPage() {
                                                     size: 20
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1254,
+                                                    lineNumber: 1712,
                                                     columnNumber: 37
                                                 }, this),
                                                 " 엑셀 업로드"
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1253,
+                                            lineNumber: 1711,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1707,13 +2793,13 @@ function AdminPage() {
                                             children: "급여 데이터 적용"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1256,
+                                            lineNumber: 1714,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1252,
+                                    lineNumber: 1710,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1723,18 +2809,18 @@ function AdminPage() {
                                         size: 20
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1267,
+                                        lineNumber: 1725,
                                         columnNumber: 33
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1258,
+                                    lineNumber: 1716,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1251,
+                            lineNumber: 1709,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1745,7 +2831,7 @@ function AdminPage() {
                                     children: "적용할 월 선택"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1273,
+                                    lineNumber: 1731,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("select", {
@@ -1773,18 +2859,18 @@ function AdminPage() {
                                             ]
                                         }, m, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1280,
+                                            lineNumber: 1738,
                                             columnNumber: 37
                                         }, this))
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1274,
+                                    lineNumber: 1732,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1272,
+                            lineNumber: 1730,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1804,7 +2890,7 @@ function AdminPage() {
                                         children: "📊"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1298,
+                                        lineNumber: 1756,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1812,7 +2898,7 @@ function AdminPage() {
                                         children: excelFile.name
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1299,
+                                        lineNumber: 1757,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1823,13 +2909,13 @@ function AdminPage() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1300,
+                                        lineNumber: 1758,
                                         columnNumber: 37
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1297,
+                                lineNumber: 1755,
                                 columnNumber: 33
                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                 className: "text-center text-gray-500 p-4",
@@ -1839,7 +2925,7 @@ function AdminPage() {
                                         children: "📁"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1304,
+                                        lineNumber: 1762,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1847,7 +2933,7 @@ function AdminPage() {
                                         children: "엑셀 파일을 드래그하거나 클릭하세요"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1305,
+                                        lineNumber: 1763,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1855,18 +2941,18 @@ function AdminPage() {
                                         children: ".xlsx, .xls 파일 지원"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1306,
+                                        lineNumber: 1764,
                                         columnNumber: 37
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1303,
+                                lineNumber: 1761,
                                 columnNumber: 33
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1286,
+                            lineNumber: 1744,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -1877,7 +2963,7 @@ function AdminPage() {
                             className: "hidden"
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1311,
+                            lineNumber: 1769,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1895,7 +2981,7 @@ function AdminPage() {
                                         children: "다시 선택"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1322,
+                                        lineNumber: 1780,
                                         columnNumber: 37
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1904,7 +2990,7 @@ function AdminPage() {
                                         children: "적용하기"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1333,
+                                        lineNumber: 1791,
                                         columnNumber: 37
                                     }, this)
                                 ]
@@ -1917,23 +3003,23 @@ function AdminPage() {
                                 children: "📁 파일 선택"
                             }, void 0, false, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1341,
+                                lineNumber: 1799,
                                 columnNumber: 33
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1319,
+                            lineNumber: 1777,
                             columnNumber: 25
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/admin/page.tsx",
-                    lineNumber: 1250,
+                    lineNumber: 1708,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1249,
+                lineNumber: 1707,
                 columnNumber: 17
             }, this), document.body),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1944,7 +3030,7 @@ function AdminPage() {
                         children: "기초자료 등록"
                     }, void 0, false, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1360,
+                        lineNumber: 1818,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1959,18 +3045,18 @@ function AdminPage() {
                                 children: year
                             }, year, false, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1365,
+                                lineNumber: 1823,
                                 columnNumber: 25
                             }, this))
                     }, void 0, false, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1363,
+                        lineNumber: 1821,
                         columnNumber: 17
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1359,
+                lineNumber: 1817,
                 columnNumber: 13
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1991,12 +3077,12 @@ function AdminPage() {
                                                     size: 24
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1390,
+                                                    lineNumber: 1848,
                                                     columnNumber: 33
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1389,
+                                                lineNumber: 1847,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2006,7 +3092,7 @@ function AdminPage() {
                                                         children: "급여 데이터"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1393,
+                                                        lineNumber: 1851,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2014,19 +3100,19 @@ function AdminPage() {
                                                         children: "매월 급여명세서 기준 입력"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1394,
+                                                        lineNumber: 1852,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1392,
+                                                lineNumber: 1850,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1388,
+                                        lineNumber: 1846,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2052,7 +3138,7 @@ function AdminPage() {
                                                 children: "1~3월 동일 적용"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1400,
+                                                lineNumber: 1858,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -2075,19 +3161,19 @@ function AdminPage() {
                                                 children: "4~12월 동일 적용"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1421,
+                                                lineNumber: 1879,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1399,
+                                        lineNumber: 1857,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1387,
+                                lineNumber: 1845,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2114,12 +3200,12 @@ function AdminPage() {
                                         ]
                                     }, month, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1447,
+                                        lineNumber: 1905,
                                         columnNumber: 29
                                     }, this))
                             }, void 0, false, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1445,
+                                lineNumber: 1903,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2132,7 +3218,7 @@ function AdminPage() {
                                                 children: "월급여 (세전)"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1466,
+                                                lineNumber: 1924,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2142,13 +3228,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("totalSalary", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1467,
+                                                lineNumber: 1925,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1465,
+                                        lineNumber: 1923,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2158,7 +3244,7 @@ function AdminPage() {
                                                 children: "비과세 식대"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1475,
+                                                lineNumber: 1933,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2168,13 +3254,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("mealAllowance", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1476,
+                                                lineNumber: 1934,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1474,
+                                        lineNumber: 1932,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2184,7 +3270,7 @@ function AdminPage() {
                                                 children: "국민연금"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1484,
+                                                lineNumber: 1942,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2194,13 +3280,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("nationalPension", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1485,
+                                                lineNumber: 1943,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1483,
+                                        lineNumber: 1941,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2210,7 +3296,7 @@ function AdminPage() {
                                                 children: "건강보험"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1493,
+                                                lineNumber: 1951,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2220,13 +3306,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("healthInsurance", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1494,
+                                                lineNumber: 1952,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1492,
+                                        lineNumber: 1950,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2236,7 +3322,7 @@ function AdminPage() {
                                                 children: "노인장기요양보험"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1502,
+                                                lineNumber: 1960,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2246,13 +3332,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("longTermCare", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1503,
+                                                lineNumber: 1961,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1501,
+                                        lineNumber: 1959,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2262,7 +3348,7 @@ function AdminPage() {
                                                 children: "고용보험"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1511,
+                                                lineNumber: 1969,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2272,13 +3358,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("employmentInsurance", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1512,
+                                                lineNumber: 1970,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1510,
+                                        lineNumber: 1968,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2288,7 +3374,7 @@ function AdminPage() {
                                                 children: "상여금"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1520,
+                                                lineNumber: 1978,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2298,13 +3384,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("bonus", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1521,
+                                                lineNumber: 1979,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1519,
+                                        lineNumber: 1977,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2314,7 +3400,7 @@ function AdminPage() {
                                                 children: "자녀학자금"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1529,
+                                                lineNumber: 1987,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2324,13 +3410,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("childTuition", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1530,
+                                                lineNumber: 1988,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1528,
+                                        lineNumber: 1986,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2340,7 +3426,7 @@ function AdminPage() {
                                                 children: "기납부세액 (소득세)"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1538,
+                                                lineNumber: 1996,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2350,13 +3436,13 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("prepaidTax", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1539,
+                                                lineNumber: 1997,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1537,
+                                        lineNumber: 1995,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2366,7 +3452,7 @@ function AdminPage() {
                                                 children: "기납부세액 (지방소득세)"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1547,
+                                                lineNumber: 2005,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2376,25 +3462,25 @@ function AdminPage() {
                                                 onChange: (e)=>handleSalaryInputChange("localIncomeTax", e.target.value)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1548,
+                                                lineNumber: 2006,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1546,
+                                        lineNumber: 2004,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1464,
+                                lineNumber: 1922,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1386,
+                        lineNumber: 1844,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2409,12 +3495,12 @@ function AdminPage() {
                                             size: 24
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1562,
+                                            lineNumber: 2020,
                                             columnNumber: 29
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1561,
+                                        lineNumber: 2019,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2424,7 +3510,7 @@ function AdminPage() {
                                                 children: "가족 정보"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1565,
+                                                lineNumber: 2023,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2432,19 +3518,19 @@ function AdminPage() {
                                                 children: "인적공제 및 카드공제 한도 확대 적용"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1566,
+                                                lineNumber: 2024,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1564,
+                                        lineNumber: 2022,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1560,
+                                lineNumber: 2018,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2455,7 +3541,7 @@ function AdminPage() {
                                         children: "기본공제"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1574,
+                                        lineNumber: 2032,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2468,7 +3554,7 @@ function AdminPage() {
                                                         children: "배우자공제"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1577,
+                                                        lineNumber: 2035,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2485,18 +3571,18 @@ function AdminPage() {
                                                                 children: hasSpouse ? "있음" : "없음"
                                                             }, hasSpouse ? "yes" : "no", false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1580,
+                                                                lineNumber: 2038,
                                                                 columnNumber: 41
                                                             }, this))
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1578,
+                                                        lineNumber: 2036,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1576,
+                                                lineNumber: 2034,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2506,7 +3592,7 @@ function AdminPage() {
                                                         children: "만 20세 이하 자녀 수"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1594,
+                                                        lineNumber: 2052,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2521,13 +3607,13 @@ function AdminPage() {
                                                                 }))
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1595,
+                                                        lineNumber: 2053,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1593,
+                                                lineNumber: 2051,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2537,7 +3623,7 @@ function AdminPage() {
                                                         children: "직계존속 (만 60세 이상)"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1605,
+                                                        lineNumber: 2063,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2552,13 +3638,13 @@ function AdminPage() {
                                                                 }))
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1606,
+                                                        lineNumber: 2064,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1604,
+                                                lineNumber: 2062,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2568,7 +3654,7 @@ function AdminPage() {
                                                         children: "형제자매"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1616,
+                                                        lineNumber: 2074,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2583,13 +3669,13 @@ function AdminPage() {
                                                                 }))
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1617,
+                                                        lineNumber: 2075,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1615,
+                                                lineNumber: 2073,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2599,7 +3685,7 @@ function AdminPage() {
                                                         children: "위탁아동 (6개월 이상)"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1627,
+                                                        lineNumber: 2085,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2614,13 +3700,13 @@ function AdminPage() {
                                                                 }))
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1628,
+                                                        lineNumber: 2086,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1626,
+                                                lineNumber: 2084,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2630,7 +3716,7 @@ function AdminPage() {
                                                         children: "기초생활수급자"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1638,
+                                                        lineNumber: 2096,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2645,25 +3731,25 @@ function AdminPage() {
                                                                 }))
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1639,
+                                                        lineNumber: 2097,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1637,
+                                                lineNumber: 2095,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1575,
+                                        lineNumber: 2033,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1573,
+                                lineNumber: 2031,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2674,7 +3760,7 @@ function AdminPage() {
                                         children: "세액공제"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1653,
+                                        lineNumber: 2111,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2687,7 +3773,7 @@ function AdminPage() {
                                                         children: "만 8세 이상 자녀 수"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1656,
+                                                        lineNumber: 2114,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2702,13 +3788,13 @@ function AdminPage() {
                                                                 }))
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1657,
+                                                        lineNumber: 2115,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1655,
+                                                lineNumber: 2113,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2718,7 +3804,7 @@ function AdminPage() {
                                                         children: "출생·입양자"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1667,
+                                                        lineNumber: 2125,
                                                         columnNumber: 33
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("select", {
@@ -2734,7 +3820,7 @@ function AdminPage() {
                                                                 children: "선택 안함"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1673,
+                                                                lineNumber: 2131,
                                                                 columnNumber: 37
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -2742,7 +3828,7 @@ function AdminPage() {
                                                                 children: "첫째"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1674,
+                                                                lineNumber: 2132,
                                                                 columnNumber: 37
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -2750,7 +3836,7 @@ function AdminPage() {
                                                                 children: "둘째"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1675,
+                                                                lineNumber: 2133,
                                                                 columnNumber: 37
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -2758,7 +3844,7 @@ function AdminPage() {
                                                                 children: "셋째 이상 (1명)"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1676,
+                                                                lineNumber: 2134,
                                                                 columnNumber: 37
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -2766,7 +3852,7 @@ function AdminPage() {
                                                                 children: "셋째 이상 (2명)"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1677,
+                                                                lineNumber: 2135,
                                                                 columnNumber: 37
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -2774,31 +3860,31 @@ function AdminPage() {
                                                                 children: "셋째 이상 (3명)"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1678,
+                                                                lineNumber: 2136,
                                                                 columnNumber: 37
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1668,
+                                                        lineNumber: 2126,
                                                         columnNumber: 33
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1666,
+                                                lineNumber: 2124,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1654,
+                                        lineNumber: 2112,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1652,
+                                lineNumber: 2110,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2808,7 +3894,7 @@ function AdminPage() {
                                         children: "비과세"
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1686,
+                                        lineNumber: 2144,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2820,7 +3906,7 @@ function AdminPage() {
                                                     children: "만 6세 이하 자녀 수 (보육수당)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1689,
+                                                    lineNumber: 2147,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2835,30 +3921,30 @@ function AdminPage() {
                                                             }))
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1690,
+                                                    lineNumber: 2148,
                                                     columnNumber: 33
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1688,
+                                            lineNumber: 2146,
                                             columnNumber: 29
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1687,
+                                        lineNumber: 2145,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1685,
+                                lineNumber: 2143,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1559,
+                        lineNumber: 2017,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2876,46 +3962,36 @@ function AdminPage() {
                                                     size: 24
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1708,
+                                                    lineNumber: 2166,
                                                     columnNumber: 33
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1707,
+                                                lineNumber: 2165,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                children: [
-                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
-                                                        className: "text-lg md:text-xl font-black",
-                                                        children: [
-                                                            "지출 데이터 (",
-                                                            selectedSpendingMonth,
-                                                            "월)"
-                                                        ]
-                                                    }, void 0, true, {
-                                                        fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1711,
-                                                        columnNumber: 33
-                                                    }, this),
-                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                                        className: "text-xs md:text-sm font-bold text-gray-500",
-                                                        children: "카드사 연동으로 자동 입력"
-                                                    }, void 0, false, {
-                                                        fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1714,
-                                                        columnNumber: 33
-                                                    }, this)
-                                                ]
-                                            }, void 0, true, {
+                                                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
+                                                    className: "text-lg md:text-xl font-black",
+                                                    children: [
+                                                        "지출 데이터 (",
+                                                        selectedSpendingMonth,
+                                                        "월)"
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 2169,
+                                                    columnNumber: 33
+                                                }, this)
+                                            }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1710,
+                                                lineNumber: 2168,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1706,
+                                        lineNumber: 2164,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2930,14 +4006,14 @@ function AdminPage() {
                                                         className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("md:w-4 md:h-4", clickedBtn === "excel" && "animate-spin")
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1729,
+                                                        lineNumber: 2184,
                                                         columnNumber: 33
                                                     }, this),
                                                     " 엑셀"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1720,
+                                                lineNumber: 2175,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -2949,14 +4025,14 @@ function AdminPage() {
                                                         className: "md:w-4 md:h-4"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1740,
+                                                        lineNumber: 2195,
                                                         columnNumber: 33
                                                     }, this),
                                                     " OCR"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1731,
+                                                lineNumber: 2186,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -2968,26 +4044,26 @@ function AdminPage() {
                                                         className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("md:w-4 md:h-4", clickedBtn === "sync" && "animate-spin")
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1751,
+                                                        lineNumber: 2206,
                                                         columnNumber: 33
                                                     }, this),
                                                     " 동기화"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1742,
+                                                lineNumber: 2197,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1719,
+                                        lineNumber: 2174,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1705,
+                                lineNumber: 2163,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3014,12 +4090,12 @@ function AdminPage() {
                                         ]
                                     }, month, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1759,
+                                        lineNumber: 2214,
                                         columnNumber: 29
                                     }, this))
                             }, void 0, false, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1757,
+                                lineNumber: 2212,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3035,7 +4111,7 @@ function AdminPage() {
                                                         children: item.name
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1781,
+                                                        lineNumber: 2236,
                                                         columnNumber: 41
                                                     }, this),
                                                     item.details && item.details.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3049,7 +4125,7 @@ function AdminPage() {
                                                                 size: 12
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1790,
+                                                                lineNumber: 2245,
                                                                 columnNumber: 49
                                                             }, this),
                                                             item.details.length,
@@ -3057,13 +4133,13 @@ function AdminPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1783,
+                                                        lineNumber: 2238,
                                                         columnNumber: 45
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1780,
+                                                lineNumber: 2235,
                                                 columnNumber: 37
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3077,7 +4153,7 @@ function AdminPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1796,
+                                                        lineNumber: 2251,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3087,24 +4163,24 @@ function AdminPage() {
                                                             size: 16
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/admin/page.tsx",
-                                                            lineNumber: 1803,
+                                                            lineNumber: 2258,
                                                             columnNumber: 45
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1799,
+                                                        lineNumber: 2254,
                                                         columnNumber: 41
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1795,
+                                                lineNumber: 2250,
                                                 columnNumber: 37
                                             }, this)
                                         ]
                                     }, item.id, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1779,
+                                        lineNumber: 2234,
                                         columnNumber: 33
                                     }, this)) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                     className: "text-center py-8 text-gray-400",
@@ -3117,7 +4193,7 @@ function AdminPage() {
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1810,
+                                            lineNumber: 2265,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -3125,18 +4201,18 @@ function AdminPage() {
                                             children: "엑셀 업로드 또는 수동 항목 추가로 데이터를 입력하세요"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1811,
+                                            lineNumber: 2266,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1809,
+                                    lineNumber: 2264,
                                     columnNumber: 29
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1776,
+                                lineNumber: 2231,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3150,26 +4226,26 @@ function AdminPage() {
                                         size: 16
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1828,
+                                        lineNumber: 2283,
                                         columnNumber: 25
                                     }, this),
                                     " 수동 항목 추가"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 1816,
+                                lineNumber: 2271,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1704,
+                        lineNumber: 2162,
                         columnNumber: 17
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1384,
+                lineNumber: 1842,
                 columnNumber: 13
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3181,7 +4257,7 @@ function AdminPage() {
                         children: "변경취소"
                     }, void 0, false, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1834,
+                        lineNumber: 2289,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3190,13 +4266,13 @@ function AdminPage() {
                         children: "저장하기"
                     }, void 0, false, {
                         fileName: "[project]/app/admin/page.tsx",
-                        lineNumber: 1845,
+                        lineNumber: 2300,
                         columnNumber: 17
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1833,
+                lineNumber: 2288,
                 columnNumber: 13
             }, this),
             showCardExcelModal && typeof document !== 'undefined' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2d$dom$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["createPortal"])(/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3212,7 +4288,7 @@ function AdminPage() {
                                     children: "엑셀 업로드"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1863,
+                                    lineNumber: 2318,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3222,70 +4298,63 @@ function AdminPage() {
                                         size: 20
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1873,
+                                        lineNumber: 2328,
                                         columnNumber: 33
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1864,
+                                    lineNumber: 2319,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1862,
+                            lineNumber: 2317,
+                            columnNumber: 25
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                            className: "font-bold text-base mb-2",
+                            children: "📋 사용 내역 선택"
+                        }, void 0, false, {
+                            fileName: "[project]/app/admin/page.tsx",
+                            lineNumber: 2333,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                            className: "mb-6",
+                            className: "flex gap-2 mb-4",
                             children: [
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("label", {
-                                    className: "block font-bold mb-3",
-                                    children: "결제 수단 선택"
-                                }, void 0, false, {
+                                {
+                                    type: "credit",
+                                    label: "💳 신용카드",
+                                    btnId: "cardExcelTabCredit"
+                                },
+                                {
+                                    type: "debit",
+                                    label: "💳 직불카드",
+                                    btnId: "cardExcelTabDebit"
+                                },
+                                {
+                                    type: "cash",
+                                    label: "🧾 현금영수증",
+                                    btnId: "cardExcelTabCash"
+                                }
+                            ].map((param)=>{
+                                let { type, label, btnId } = param;
+                                const isDisabled = cardExcelFile !== null && cardType !== type;
+                                return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                    onClick: ()=>!isDisabled && handleButtonClick(btnId, ()=>setCardType(type)),
+                                    disabled: isDisabled,
+                                    className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("flex-1 py-3 font-bold border-2 border-black transition-all", cardType === type ? "bg-neo-cyan shadow-none translate-x-[2px] translate-y-[2px]" : isDisabled ? "bg-gray-200 text-gray-400 cursor-not-allowed opacity-50" : clickedBtn === btnId ? "bg-neo-orange translate-x-[2px] translate-y-[2px] shadow-none" : "bg-white shadow-[4px_4px_0px_0px_#000] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000]"),
+                                    children: label
+                                }, type, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1879,
-                                    columnNumber: 29
-                                }, this),
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    className: "flex gap-2 flex-wrap",
-                                    children: [
-                                        {
-                                            value: "credit",
-                                            label: "신용카드",
-                                            color: "bg-neo-pink"
-                                        },
-                                        {
-                                            value: "debit",
-                                            label: "직불카드",
-                                            color: "bg-neo-cyan"
-                                        },
-                                        {
-                                            value: "cash",
-                                            label: "현금영수증",
-                                            color: "bg-neo-yellow"
-                                        }
-                                    ].map((param)=>{
-                                        let { value, label, color } = param;
-                                        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
-                                            onClick: ()=>setCardType(value),
-                                            className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("px-4 py-2 font-bold border-2 border-black transition-all", cardType === value ? "".concat(color, " shadow-none translate-x-[2px] translate-y-[2px]") : "bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000]"),
-                                            children: label
-                                        }, value, false, {
-                                            fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1886,
-                                            columnNumber: 37
-                                        }, this);
-                                    })
-                                }, void 0, false, {
-                                    fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1880,
-                                    columnNumber: 29
-                                }, this)
-                            ]
-                        }, void 0, true, {
+                                    lineNumber: 2342,
+                                    columnNumber: 37
+                                }, this);
+                            })
+                        }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1878,
+                            lineNumber: 2334,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3305,7 +4374,7 @@ function AdminPage() {
                                     className: "hidden"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1913,
+                                    lineNumber: 2374,
                                     columnNumber: 29
                                 }, this),
                                 cardExcelFile ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3316,7 +4385,7 @@ function AdminPage() {
                                             className: "text-green-500"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1922,
+                                            lineNumber: 2383,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3324,7 +4393,7 @@ function AdminPage() {
                                             children: cardExcelFile.name
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1923,
+                                            lineNumber: 2384,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3338,18 +4407,18 @@ function AdminPage() {
                                                 size: 16
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1932,
+                                                lineNumber: 2393,
                                                 columnNumber: 41
                                             }, this)
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1924,
+                                            lineNumber: 2385,
                                             columnNumber: 37
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1921,
+                                    lineNumber: 2382,
                                     columnNumber: 33
                                 }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
                                     children: [
@@ -3358,15 +4427,15 @@ function AdminPage() {
                                             className: "mx-auto mb-2 text-gray-400"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1937,
+                                            lineNumber: 2398,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                             className: "font-bold mb-2",
-                                            children: "카드사 엑셀 파일을 드래그하거나"
+                                            children: "엑셀 파일을 드래그하거나"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1938,
+                                            lineNumber: 2399,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3378,7 +4447,7 @@ function AdminPage() {
                                             children: "파일 선택"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1939,
+                                            lineNumber: 2400,
                                             columnNumber: 37
                                         }, this)
                                     ]
@@ -3386,7 +4455,7 @@ function AdminPage() {
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1903,
+                            lineNumber: 2364,
                             columnNumber: 25
                         }, this),
                         cardExcelPreview.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3400,7 +4469,7 @@ function AdminPage() {
                                             children: "파싱 결과 미리보기"
                                         }, void 0, false, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1953,
+                                            lineNumber: 2414,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3418,19 +4487,19 @@ function AdminPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1957,
+                                                    lineNumber: 2418,
                                                     columnNumber: 45
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 1954,
+                                            lineNumber: 2415,
                                             columnNumber: 37
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1952,
+                                    lineNumber: 2413,
                                     columnNumber: 33
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3447,7 +4516,7 @@ function AdminPage() {
                                                             children: "날짜"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/admin/page.tsx",
-                                                            lineNumber: 1967,
+                                                            lineNumber: 2428,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -3455,7 +4524,7 @@ function AdminPage() {
                                                             children: "가맹점"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/admin/page.tsx",
-                                                            lineNumber: 1968,
+                                                            lineNumber: 2429,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -3463,7 +4532,7 @@ function AdminPage() {
                                                             children: "금액"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/admin/page.tsx",
-                                                            lineNumber: 1969,
+                                                            lineNumber: 2430,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -3471,30 +4540,30 @@ function AdminPage() {
                                                             children: "분류"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/admin/page.tsx",
-                                                            lineNumber: 1970,
+                                                            lineNumber: 2431,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 1966,
+                                                    lineNumber: 2427,
                                                     columnNumber: 45
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1965,
+                                                lineNumber: 2426,
                                                 columnNumber: 41
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
                                                 children: cardExcelPreview.map((item, idx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
-                                                        className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])(item.category === "excluded" && "bg-red-50 text-red-400 line-through", item.category === "transport" && "bg-blue-50", item.category === "insurance" && "bg-purple-50", item.category === "medical" && "bg-green-50"),
+                                                        className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])(item.category === "excluded" && "bg-red-50 text-red-400 line-through", item.category === "transport" && "bg-blue-50", item.category === "insurance" && "bg-purple-50", item.category === "medical" && "bg-green-50", item.category === "market" && "bg-orange-50", item.category === "culture" && "bg-pink-50"),
                                                         children: [
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
                                                                 className: "p-2 border-b",
                                                                 children: item.date
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1981,
+                                                                lineNumber: 2444,
                                                                 columnNumber: 53
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -3502,7 +4571,7 @@ function AdminPage() {
                                                                 children: item.merchant
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1982,
+                                                                lineNumber: 2445,
                                                                 columnNumber: 53
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -3513,7 +4582,7 @@ function AdminPage() {
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1983,
+                                                                lineNumber: 2446,
                                                                 columnNumber: 53
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -3523,62 +4592,76 @@ function AdminPage() {
                                                                     children: "제외"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/admin/page.tsx",
-                                                                    lineNumber: 1986,
+                                                                    lineNumber: 2449,
                                                                     columnNumber: 61
                                                                 }, this) : item.category === "transport" ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                     className: "text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded",
                                                                     children: "대중교통"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/admin/page.tsx",
-                                                                    lineNumber: 1988,
+                                                                    lineNumber: 2451,
                                                                     columnNumber: 61
                                                                 }, this) : item.category === "insurance" ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                     className: "text-xs bg-purple-100 text-purple-600 px-2 py-1 rounded",
                                                                     children: "보험료"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/admin/page.tsx",
-                                                                    lineNumber: 1990,
+                                                                    lineNumber: 2453,
                                                                     columnNumber: 61
                                                                 }, this) : item.category === "medical" ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                     className: "text-xs bg-teal-100 text-teal-600 px-2 py-1 rounded",
                                                                     children: "의료비"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/admin/page.tsx",
-                                                                    lineNumber: 1992,
+                                                                    lineNumber: 2455,
+                                                                    columnNumber: 61
+                                                                }, this) : item.category === "market" ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                                    className: "text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded",
+                                                                    children: "전통시장"
+                                                                }, void 0, false, {
+                                                                    fileName: "[project]/app/admin/page.tsx",
+                                                                    lineNumber: 2457,
+                                                                    columnNumber: 61
+                                                                }, this) : item.category === "culture" ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                                    className: "text-xs bg-pink-100 text-pink-600 px-2 py-1 rounded",
+                                                                    children: "문화체육"
+                                                                }, void 0, false, {
+                                                                    fileName: "[project]/app/admin/page.tsx",
+                                                                    lineNumber: 2459,
                                                                     columnNumber: 61
                                                                 }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                     className: "text-xs bg-green-100 text-green-600 px-2 py-1 rounded",
-                                                                    children: "카드"
+                                                                    children: cardType === "credit" ? "신용" : cardType === "debit" ? "직불" : "현금"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/admin/page.tsx",
-                                                                    lineNumber: 1994,
+                                                                    lineNumber: 2461,
                                                                     columnNumber: 61
                                                                 }, this)
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/admin/page.tsx",
-                                                                lineNumber: 1984,
+                                                                lineNumber: 2447,
                                                                 columnNumber: 53
                                                             }, this)
                                                         ]
                                                     }, idx, true, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 1975,
+                                                        lineNumber: 2436,
                                                         columnNumber: 49
                                                     }, this))
                                             }, void 0, false, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 1973,
+                                                lineNumber: 2434,
                                                 columnNumber: 41
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 1964,
+                                        lineNumber: 2425,
                                         columnNumber: 37
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 1963,
+                                    lineNumber: 2424,
                                     columnNumber: 33
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3588,10 +4671,13 @@ function AdminPage() {
                                             className: "flex justify-between font-bold text-sm",
                                             children: [
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                    children: "💳 카드 사용:"
-                                                }, void 0, false, {
+                                                    children: [
+                                                        cardType === "credit" ? "💳 신용카드" : cardType === "debit" ? "💳 직불카드" : "🧾 현금영수증",
+                                                        ":"
+                                                    ]
+                                                }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2004,
+                                                    lineNumber: 2473,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3601,13 +4687,13 @@ function AdminPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2005,
+                                                    lineNumber: 2474,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 2003,
+                                            lineNumber: 2472,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3617,7 +4703,7 @@ function AdminPage() {
                                                     children: "🚌 대중교통:"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2008,
+                                                    lineNumber: 2477,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3627,13 +4713,13 @@ function AdminPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2009,
+                                                    lineNumber: 2478,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 2007,
+                                            lineNumber: 2476,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3643,7 +4729,7 @@ function AdminPage() {
                                                     children: "🛡️ 보험료:"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2012,
+                                                    lineNumber: 2481,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3653,13 +4739,13 @@ function AdminPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2013,
+                                                    lineNumber: 2482,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 2011,
+                                            lineNumber: 2480,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3669,7 +4755,7 @@ function AdminPage() {
                                                     children: "🏥 의료비:"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2016,
+                                                    lineNumber: 2485,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3679,13 +4765,65 @@ function AdminPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2017,
+                                                    lineNumber: 2486,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 2015,
+                                            lineNumber: 2484,
+                                            columnNumber: 37
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: "flex justify-between text-sm text-orange-600",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    children: "🏪 전통시장:"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 2489,
+                                                    columnNumber: 41
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    children: [
+                                                        cardExcelPreview.filter((i)=>i.category === "market").reduce((s, i)=>s + i.amount, 0).toLocaleString(),
+                                                        "원"
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 2490,
+                                                    columnNumber: 41
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "[project]/app/admin/page.tsx",
+                                            lineNumber: 2488,
+                                            columnNumber: 37
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: "flex justify-between text-sm text-pink-600",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    children: "🎭 문화체육:"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 2493,
+                                                    columnNumber: 41
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    children: [
+                                                        cardExcelPreview.filter((i)=>i.category === "culture").reduce((s, i)=>s + i.amount, 0).toLocaleString(),
+                                                        "원"
+                                                    ]
+                                                }, void 0, true, {
+                                                    fileName: "[project]/app/admin/page.tsx",
+                                                    lineNumber: 2494,
+                                                    columnNumber: 41
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "[project]/app/admin/page.tsx",
+                                            lineNumber: 2492,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3695,7 +4833,7 @@ function AdminPage() {
                                                     children: "❌ 제외:"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2020,
+                                                    lineNumber: 2497,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3705,25 +4843,25 @@ function AdminPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2021,
+                                                    lineNumber: 2498,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 2019,
+                                            lineNumber: 2496,
                                             columnNumber: 37
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2002,
+                                    lineNumber: 2471,
                                     columnNumber: 33
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 1951,
+                            lineNumber: 2412,
                             columnNumber: 29
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3734,7 +4872,7 @@ function AdminPage() {
                                     children: "📋 자동 분류 안내:"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2029,
+                                    lineNumber: 2506,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -3742,7 +4880,7 @@ function AdminPage() {
                                     children: "🚌 대중교통: 버스, 지하철, 모바일이즐 → 대중교통 항목으로 분류"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2030,
+                                    lineNumber: 2507,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -3750,15 +4888,31 @@ function AdminPage() {
                                     children: "🛡️ 보험료: 메리츠화재, DB손해보험 등 → 보험료 항목으로 분류"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2031,
+                                    lineNumber: 2508,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                    className: "text-green-600",
+                                    className: "text-teal-600",
                                     children: "🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2032,
+                                    lineNumber: 2509,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-orange-600",
+                                    children: "🏪 전통시장: 전통시장, 재래시장 등 → 전통시장 항목으로 분류"
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 2510,
+                                    columnNumber: 29
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                    className: "text-pink-600",
+                                    children: "🎭 문화체육: 서점, 도서, 영화관, 헬스 등 → 문화체육 항목으로 분류"
+                                }, void 0, false, {
+                                    fileName: "[project]/app/admin/page.tsx",
+                                    lineNumber: 2511,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -3766,7 +4920,7 @@ function AdminPage() {
                                     children: "❌ 제외: 세금, 공과금, 통신비, 도로통행료 → 공제 불가"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2033,
+                                    lineNumber: 2512,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -3774,13 +4928,13 @@ function AdminPage() {
                                     children: "취소된 거래는 자동으로 제외됩니다."
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2034,
+                                    lineNumber: 2513,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 2028,
+                            lineNumber: 2505,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3792,7 +4946,7 @@ function AdminPage() {
                                     children: "취소"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2039,
+                                    lineNumber: 2518,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3802,24 +4956,24 @@ function AdminPage() {
                                     children: "적용하기"
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2045,
+                                    lineNumber: 2524,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 2038,
+                            lineNumber: 2517,
                             columnNumber: 25
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/admin/page.tsx",
-                    lineNumber: 1861,
+                    lineNumber: 2316,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 1860,
+                lineNumber: 2315,
                 columnNumber: 17
             }, this), document.body),
             showDetailsModal && selectedItemDetails && typeof document !== 'undefined' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2d$dom$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["createPortal"])(/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3838,7 +4992,7 @@ function AdminPage() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2068,
+                                    lineNumber: 2547,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -3851,18 +5005,18 @@ function AdminPage() {
                                         size: 20
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 2081,
+                                        lineNumber: 2560,
                                         columnNumber: 33
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/app/admin/page.tsx",
-                                    lineNumber: 2069,
+                                    lineNumber: 2548,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 2067,
+                            lineNumber: 2546,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3878,7 +5032,7 @@ function AdminPage() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 2087,
+                                        lineNumber: 2566,
                                         columnNumber: 33
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -3889,18 +5043,18 @@ function AdminPage() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 2088,
+                                        lineNumber: 2567,
                                         columnNumber: 33
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 2086,
+                                lineNumber: 2565,
                                 columnNumber: 29
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 2085,
+                            lineNumber: 2564,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -3917,7 +5071,7 @@ function AdminPage() {
                                                     children: "날짜"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2096,
+                                                    lineNumber: 2575,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -3925,7 +5079,7 @@ function AdminPage() {
                                                     children: "가맹점"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2097,
+                                                    lineNumber: 2576,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -3933,18 +5087,18 @@ function AdminPage() {
                                                     children: "금액"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/admin/page.tsx",
-                                                    lineNumber: 2098,
+                                                    lineNumber: 2577,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/admin/page.tsx",
-                                            lineNumber: 2095,
+                                            lineNumber: 2574,
                                             columnNumber: 37
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 2094,
+                                        lineNumber: 2573,
                                         columnNumber: 33
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
@@ -3956,7 +5110,7 @@ function AdminPage() {
                                                         children: detail.date
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 2104,
+                                                        lineNumber: 2583,
                                                         columnNumber: 45
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -3964,7 +5118,7 @@ function AdminPage() {
                                                         children: detail.merchant
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 2105,
+                                                        lineNumber: 2584,
                                                         columnNumber: 45
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -3975,29 +5129,29 @@ function AdminPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/admin/page.tsx",
-                                                        lineNumber: 2106,
+                                                        lineNumber: 2585,
                                                         columnNumber: 45
                                                     }, this)
                                                 ]
                                             }, idx, true, {
                                                 fileName: "[project]/app/admin/page.tsx",
-                                                lineNumber: 2103,
+                                                lineNumber: 2582,
                                                 columnNumber: 41
                                             }, this))
                                     }, void 0, false, {
                                         fileName: "[project]/app/admin/page.tsx",
-                                        lineNumber: 2101,
+                                        lineNumber: 2580,
                                         columnNumber: 33
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 2093,
+                                lineNumber: 2572,
                                 columnNumber: 29
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 2092,
+                            lineNumber: 2571,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4011,33 +5165,33 @@ function AdminPage() {
                                 children: "닫기"
                             }, void 0, false, {
                                 fileName: "[project]/app/admin/page.tsx",
-                                lineNumber: 2114,
+                                lineNumber: 2593,
                                 columnNumber: 29
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/admin/page.tsx",
-                            lineNumber: 2113,
+                            lineNumber: 2592,
                             columnNumber: 25
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/admin/page.tsx",
-                    lineNumber: 2066,
+                    lineNumber: 2545,
                     columnNumber: 21
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/admin/page.tsx",
-                lineNumber: 2065,
+                lineNumber: 2544,
                 columnNumber: 17
             }, this), document.body)
         ]
     }, void 0, true, {
         fileName: "[project]/app/admin/page.tsx",
-        lineNumber: 1023,
+        lineNumber: 1322,
         columnNumber: 9
     }, this);
 }
-_s(AdminPage, "cIlPs7t3/KtbW0Ddk4GB66Del/c=");
+_s(AdminPage, "2CSQ1RoGz3TKDEviutds9u2L8YM=");
 _c = AdminPage;
 var _c;
 __turbopack_context__.k.register(_c, "AdminPage");

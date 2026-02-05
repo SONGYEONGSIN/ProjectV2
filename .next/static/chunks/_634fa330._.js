@@ -166,13 +166,52 @@ function hasAdminData(year) {
     }
 }
 function generateDeductionAnalysis(adminData) {
-    var _adminData_family;
-    const salary = adminData.salary.totalSalary - adminData.salary.mealAllowance;
+    var _adminData_family, _adminData_family1, _adminData_family2, _adminData_family3, _adminData_family4, _adminData_family5, _adminData_family6;
+    // 총급여액 = 급여(totalSalary) + 상여금(bonus) + 자녀학자금(childTuition) - 비과세(mealAllowance + 보육수당)
+    const childcareAllowance = (adminData.salary.childrenUnder6 || 0) * 200000 * 12; // 6세 이하 자녀당 월 20만원
+    const totalNonTaxable = (adminData.salary.mealAllowance || 0) + childcareAllowance;
+    const salary = (adminData.salary.totalSalary || 0) + (adminData.salary.bonus || 0) + (adminData.salary.childTuition || 0) - totalNonTaxable;
     const spending = adminData.spending;
     const deductions = adminData.deductions;
     // 신용카드 등 소득공제 계산
     const totalCardSpending = spending.creditCard + spending.debitCard + spending.cash + spending.publicTransport + spending.traditionalMarket + spending.culture;
     const minSpending = salary * 0.25; // 25% 문턱
+    // 실제 공제액 계산 (25% 문턱 초과분에 공제율 적용)
+    let cardDeduction = 0;
+    if (totalCardSpending > minSpending) {
+        let remaining = minSpending;
+        // 25% 문턱 소진 순서: 신용카드 → 직불카드 → 현금영수증 → 대중교통 → 전통시장 → 문화비
+        // 1. 신용카드 (15%)
+        const creditUsed = Math.min(spending.creditCard, remaining);
+        remaining -= creditUsed;
+        const creditExcess = spending.creditCard - creditUsed;
+        cardDeduction += creditExcess * 0.15;
+        // 2. 직불카드 (30%)
+        const debitUsed = Math.min(spending.debitCard, remaining);
+        remaining -= debitUsed;
+        const debitExcess = spending.debitCard - debitUsed;
+        cardDeduction += debitExcess * 0.30;
+        // 3. 현금영수증 (30%)
+        const cashUsed = Math.min(spending.cash, remaining);
+        remaining -= cashUsed;
+        const cashExcess = spending.cash - cashUsed;
+        cardDeduction += cashExcess * 0.30;
+        // 4. 대중교통 (80%)
+        const transportUsed = Math.min(spending.publicTransport, remaining);
+        remaining -= transportUsed;
+        const transportExcess = spending.publicTransport - transportUsed;
+        cardDeduction += transportExcess * 0.80;
+        // 5. 전통시장 (40%)
+        const marketUsed = Math.min(spending.traditionalMarket, remaining);
+        remaining -= marketUsed;
+        const marketExcess = spending.traditionalMarket - marketUsed;
+        cardDeduction += marketExcess * 0.40;
+        // 6. 문화비 (30%)
+        const cultureUsed = Math.min(spending.culture, remaining);
+        remaining -= cultureUsed;
+        const cultureExcess = spending.culture - cultureUsed;
+        cardDeduction += cultureExcess * 0.30;
+    }
     // 카드 사용 상태: 문턱 대비 얼마나 사용했는지
     const cardProgress = minSpending > 0 ? totalCardSpending / minSpending : 0;
     const getCardStatus = ()=>{
@@ -190,64 +229,210 @@ function generateDeductionAnalysis(adminData) {
     // 카드공제 한도: 기본 600만 + 자녀시 100만 (최대)
     const hasChildren = ((_adminData_family = adminData.family) === null || _adminData_family === void 0 ? void 0 : _adminData_family.children) >= 1;
     const cardLimit = hasChildren ? 7000000 : 6000000;
+    // 한도 적용
+    const finalCardDeduction = Math.min(cardDeduction, cardLimit);
+    // 4대보험 합계
+    const socialInsurance = adminData.salary.nationalPension + adminData.salary.healthInsurance + (adminData.salary.longTermCare || 0) + (adminData.salary.employmentInsurance || 0);
+    // 인적공제 (부양가족 수)
+    const dependents = 1 + (((_adminData_family1 = adminData.family) === null || _adminData_family1 === void 0 ? void 0 : _adminData_family1.spouse) ? 1 : 0) + (((_adminData_family2 = adminData.family) === null || _adminData_family2 === void 0 ? void 0 : _adminData_family2.children) || 0) + (((_adminData_family3 = adminData.family) === null || _adminData_family3 === void 0 ? void 0 : _adminData_family3.parents) || 0) + (((_adminData_family4 = adminData.family) === null || _adminData_family4 === void 0 ? void 0 : _adminData_family4.siblings) || 0) + (((_adminData_family5 = adminData.family) === null || _adminData_family5 === void 0 ? void 0 : _adminData_family5.foster) || 0) + (((_adminData_family6 = adminData.family) === null || _adminData_family6 === void 0 ? void 0 : _adminData_family6.recipient) || 0);
+    const personalDeduction = dependents * 1500000;
+    // 근로소득금액 계산 (총급여 - 근로소득공제)
+    let incomeDeduction = 0;
+    if (salary <= 5000000) {
+        incomeDeduction = salary * 0.7;
+    } else if (salary <= 15000000) {
+        incomeDeduction = 3500000 + (salary - 5000000) * 0.4;
+    } else if (salary <= 45000000) {
+        incomeDeduction = 7500000 + (salary - 15000000) * 0.15;
+    } else if (salary <= 100000000) {
+        incomeDeduction = 12000000 + (salary - 45000000) * 0.05;
+    } else {
+        incomeDeduction = 14750000 + (salary - 100000000) * 0.02;
+    }
+    const earnedIncome = Math.round(salary - incomeDeduction); // 근로소득금액
     const items = [
+        {
+            id: "0",
+            category: "기본공제 (인적공제)",
+            type: "소득공제",
+            amount: personalDeduction,
+            limit: personalDeduction,
+            status: "optimal",
+            thresholdInfo: "부양가족 ".concat(dependents, "명 × 150만원")
+        },
+        {
+            id: "0-1",
+            category: "4대보험",
+            type: "소득공제",
+            amount: socialInsurance,
+            limit: socialInsurance,
+            status: "optimal",
+            thresholdInfo: "납부액 전액 공제"
+        },
         {
             id: "1",
             category: "신용카드 등 사용금액",
             type: "소득공제",
-            amount: totalCardSpending,
+            amount: finalCardDeduction,
             limit: cardLimit,
             status: getCardStatus(),
-            thresholdInfo: "25% 문턱: ".concat(Math.round(minSpending).toLocaleString("ko-KR"), "원")
+            thresholdInfo: "25% 문턱: ".concat(Math.round(minSpending).toLocaleString("ko-KR"), "원\n지출: ").concat(totalCardSpending.toLocaleString("ko-KR"), "원\n초과분: ").concat(Math.max(0, totalCardSpending - Math.round(minSpending)).toLocaleString("ko-KR"), "원")
         },
         {
             id: "2",
-            category: "주택마련저축",
+            category: "주택자금(청약저축)",
             type: "소득공제",
-            amount: deductions.housing,
+            amount: deductions.housingSubscription || deductions.housing || 0,
             limit: 3000000,
-            status: getStatus(deductions.housing / 3000000)
+            status: getStatus((deductions.housingSubscription || deductions.housing || 0) / 3000000),
+            thresholdInfo: "연 300만원 한도, 40% 공제"
+        },
+        {
+            id: "2-1",
+            category: "주택자금(임차차입금)",
+            type: "소득공제",
+            amount: deductions.housingLoan || 0,
+            limit: 4000000,
+            status: getStatus((deductions.housingLoan || 0) / 4000000),
+            thresholdInfo: "연 400만원 한도, 40% 공제"
+        },
+        {
+            id: "2-2",
+            category: "주택자금(장기주택저당차입금)",
+            type: "소득공제",
+            amount: deductions.housingMortgage || 0,
+            limit: 18000000,
+            status: getStatus((deductions.housingMortgage || 0) / 18000000),
+            thresholdInfo: "연 300~1,800만원 한도\n이자 전액 공제"
+        },
+        {
+            id: "2-3",
+            category: "월세 세액공제",
+            type: "세액공제",
+            amount: Math.min(deductions.housingRent || 0, 10000000) * 0.17,
+            limit: 10000000,
+            status: getStatus((deductions.housingRent || 0) / 10000000),
+            thresholdInfo: "연 1,000만원 한도 × 17%",
+            maxBenefit: 10000000 * 0.17
         },
         {
             id: "3",
             category: "의료비",
             type: "세액공제",
-            amount: deductions.medical,
+            amount: Math.max(0, deductions.medical - salary * 0.03) * 0.15,
             limit: 7000000,
             status: deductions.medical > salary * 0.03 ? "good" : "warning",
-            thresholdInfo: "3% 문턱: ".concat(Math.round(salary * 0.03).toLocaleString("ko-KR"), "원")
+            thresholdInfo: "3% 문턱: ".concat(Math.round(salary * 0.03).toLocaleString("ko-KR"), "원\n지출: ").concat(deductions.medical.toLocaleString("ko-KR"), "원\n초과분: ").concat(Math.max(0, deductions.medical - Math.round(salary * 0.03)).toLocaleString("ko-KR"), "원\n\n난임시술비: 해당금액 × 30%\n미숙아·선천성: 해당금액 × 20%\n본인/장애/만65/6세: 해당금액 × 15%\n그 밖의 부양가족: 해당금액 × 15%"),
+            maxBenefit: 7000000 * 0.15
         },
         {
             id: "4",
             category: "교육비",
             type: "세액공제",
-            amount: deductions.education,
+            amount: Math.min(deductions.education, 3000000) * 0.15,
             limit: 3000000,
-            status: getStatus(deductions.education / 3000000)
+            status: getStatus(deductions.education / 3000000),
+            thresholdInfo: "본인: 해당금액 × 15%\n미취학·초중고: 해당금액 × 15%\n대학: 해당금액 × 15%",
+            maxBenefit: 3000000 * 0.15
         },
         {
             id: "5",
             category: "기부금",
             type: "세액공제",
-            amount: deductions.donation,
-            limit: 200000,
-            status: getStatus(deductions.donation / 200000)
+            amount: (()=>{
+                // 정치자금: 10만원이하 100/110, 초과 15%, 3천만원초과 25%
+                const political = deductions.donationPolitical || 0;
+                let politicalCredit = 0;
+                if (political <= 100000) {
+                    politicalCredit = Math.round(political * 100 / 110);
+                } else if (political <= 30000000) {
+                    politicalCredit = Math.round(100000 * 100 / 110) + Math.round((political - 100000) * 0.15);
+                } else {
+                    politicalCredit = Math.round(100000 * 100 / 110) + Math.round(29900000 * 0.15) + Math.round((political - 30000000) * 0.25);
+                }
+                // 고향사랑: 10만원이하 100/110, 초과 15%
+                const hometown = deductions.donationHometown || 0;
+                let hometownCredit = 0;
+                if (hometown <= 100000) {
+                    hometownCredit = Math.round(hometown * 100 / 110);
+                } else {
+                    hometownCredit = Math.round(100000 * 100 / 110) + Math.round((hometown - 100000) * 0.15);
+                }
+                // 고향사랑특별재난: 10만원이하 100/110, 초과 30%
+                const disaster = deductions.donationDisaster || 0;
+                let disasterCredit = 0;
+                if (disaster <= 100000) {
+                    disasterCredit = Math.round(disaster * 100 / 110);
+                } else {
+                    disasterCredit = Math.round(100000 * 100 / 110) + Math.round((disaster - 100000) * 0.3);
+                }
+                // 특례기부금: 1천만원이하 15%, 초과 30%
+                const special = deductions.donationSpecial || 0;
+                let specialCredit = 0;
+                if (special <= 10000000) {
+                    specialCredit = Math.round(special * 0.15);
+                } else {
+                    specialCredit = Math.round(10000000 * 0.15) + Math.round((special - 10000000) * 0.3);
+                }
+                // 우리사주조합: 1천만원이하 15%, 초과 30%
+                const stock = deductions.donationStock || 0;
+                let stockCredit = 0;
+                if (stock <= 10000000) {
+                    stockCredit = Math.round(stock * 0.15);
+                } else {
+                    stockCredit = Math.round(10000000 * 0.15) + Math.round((stock - 10000000) * 0.3);
+                }
+                // 일반기부금(종교): 1천만원이하 15%, 초과 30%
+                const religious = deductions.donationReligious || 0;
+                let religiousCredit = 0;
+                if (religious <= 10000000) {
+                    religiousCredit = Math.round(religious * 0.15);
+                } else {
+                    religiousCredit = Math.round(10000000 * 0.15) + Math.round((religious - 10000000) * 0.3);
+                }
+                // 일반기부금(종교 외): 1천만원이하 15%, 초과 30%
+                const nonReligious = deductions.donationNonReligious || 0;
+                let nonReligiousCredit = 0;
+                if (nonReligious <= 10000000) {
+                    nonReligiousCredit = Math.round(nonReligious * 0.15);
+                } else {
+                    nonReligiousCredit = Math.round(10000000 * 0.15) + Math.round((nonReligious - 10000000) * 0.3);
+                }
+                return politicalCredit + hometownCredit + disasterCredit + specialCredit + stockCredit + religiousCredit + nonReligiousCredit;
+            })(),
+            limit: earnedIncome,
+            status: getStatus((deductions.donationPolitical || 0) + (deductions.donationHometown || 0) + (deductions.donationDisaster || 0) + (deductions.donationSpecial || 0) + (deductions.donationStock || 0) + (deductions.donationReligious || 0) + (deductions.donationNonReligious || 0) / earnedIncome),
+            thresholdInfo: "정치자금: ".concat((deductions.donationPolitical || 0).toLocaleString("ko-KR"), "원\n고향사랑: ").concat((deductions.donationHometown || 0).toLocaleString("ko-KR"), "원\n고향사랑특별재난: ").concat((deductions.donationDisaster || 0).toLocaleString("ko-KR"), "원\n특례기부금: ").concat((deductions.donationSpecial || 0).toLocaleString("ko-KR"), "원\n우리사주조합: ").concat((deductions.donationStock || 0).toLocaleString("ko-KR"), "원\n일반기부(종교): ").concat((deductions.donationReligious || 0).toLocaleString("ko-KR"), "원\n일반기부(종교 외): ").concat((deductions.donationNonReligious || 0).toLocaleString("ko-KR"), "원"),
+            maxBenefit: earnedIncome * 0.3,
+            earnedIncome: earnedIncome,
+            donationLimits: {
+                politicalFund: earnedIncome,
+                hometownDisaster: 2000000,
+                specialDonation: earnedIncome,
+                employeeStock: Math.round(earnedIncome * 0.3),
+                generalReligious: Math.round(earnedIncome * 0.1),
+                generalNonReligious: Math.round(earnedIncome * 0.3)
+            }
         },
         {
             id: "6",
             category: "연금저축/IRP",
             type: "세액공제",
-            amount: deductions.pension,
+            amount: Math.min(deductions.pension, 9000000) * 0.12,
             limit: 9000000,
-            status: getStatus(deductions.pension / 9000000)
+            status: getStatus(deductions.pension / 9000000),
+            thresholdInfo: "".concat(Math.min(deductions.pension, 9000000).toLocaleString("ko-KR"), "원 × 12%"),
+            maxBenefit: 9000000 * 0.12
         },
         {
             id: "7",
             category: "보험료",
             type: "세액공제",
-            amount: deductions.insurance,
+            amount: Math.min(deductions.insurance, 1000000) * 0.12,
             limit: 1000000,
-            status: getStatus(deductions.insurance / 1000000)
+            status: getStatus(deductions.insurance / 1000000),
+            thresholdInfo: "".concat(Math.min(deductions.insurance, 1000000).toLocaleString("ko-KR"), "원 × 12%"),
+            maxBenefit: 1000000 * 0.12
         }
     ];
     return items;
@@ -4053,7 +4238,7 @@ function CalculatorPage() {
                                                                                     children: [
                                                                                         "주택청약저축 납입액 (원)",
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$ui$2f$Tooltip$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Tooltip"], {
-                                                                                            content: "연 납입액 최대 300만원 한도, 40% 소득공제",
+                                                                                            content: "연 납입액 최대 300만원 한도, 40% 소득공제 (총급여 7천만원 이하)",
                                                                                             children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$info$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Info$3e$__["Info"], {
                                                                                                 size: 14,
                                                                                                 className: "text-gray-400 cursor-help"
@@ -4075,13 +4260,21 @@ function CalculatorPage() {
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
                                                                                     type: "text",
-                                                                                    className: "neo-input",
+                                                                                    className: "neo-input ".concat(inputs.salary > 70000000 ? 'border-red-500 bg-red-50' : ''),
                                                                                     value: formatNumber(inputs.housingSubscription),
                                                                                     onChange: (e)=>handleInputChange("housingSubscription", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
                                                                                     lineNumber: 1873,
                                                                                     columnNumber: 61
+                                                                                }, this),
+                                                                                inputs.salary > 70000000 && inputs.housingSubscription > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                                                    className: "text-xs text-red-500 font-bold",
+                                                                                    children: "⚠️ 총급여 7천만원 초과로 공제 불가"
+                                                                                }, void 0, false, {
+                                                                                    fileName: "[project]/app/calculator/page.tsx",
+                                                                                    lineNumber: 1880,
+                                                                                    columnNumber: 65
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
@@ -4103,18 +4296,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 1884,
+                                                                                                lineNumber: 1887,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 1883,
+                                                                                            lineNumber: 1886,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1881,
+                                                                                    lineNumber: 1884,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4124,13 +4317,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("rentLoanPayment", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1887,
+                                                                                    lineNumber: 1890,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1880,
+                                                                            lineNumber: 1883,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4147,18 +4340,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 1898,
+                                                                                                lineNumber: 1901,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 1897,
+                                                                                            lineNumber: 1900,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1895,
+                                                                                    lineNumber: 1898,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4168,13 +4361,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("mortgageInterest", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1901,
+                                                                                    lineNumber: 1904,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1894,
+                                                                            lineNumber: 1897,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4191,18 +4384,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 1912,
+                                                                                                lineNumber: 1915,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 1911,
+                                                                                            lineNumber: 1914,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1909,
+                                                                                    lineNumber: 1912,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4212,13 +4405,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("monthlyRent", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1915,
+                                                                                    lineNumber: 1918,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1908,
+                                                                            lineNumber: 1911,
                                                                             columnNumber: 57
                                                                         }, this)
                                                                     ]
@@ -4241,7 +4434,7 @@ function CalculatorPage() {
                                                                     children: "계산식"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 1927,
+                                                                    lineNumber: 1930,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4254,7 +4447,7 @@ function CalculatorPage() {
                                                                                     children: "▸ 소득공제"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1931,
+                                                                                    lineNumber: 1934,
                                                                                     columnNumber: 65
                                                                                 }, this),
                                                                                 inputs.housingSubscription > 0 && inputs.salary <= 70000000 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4265,7 +4458,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1933,
+                                                                                    lineNumber: 1936,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.housingSubscription > 0 && inputs.salary > 70000000 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4273,7 +4466,7 @@ function CalculatorPage() {
                                                                                     children: "주택청약저축: 총급여 7천만원 초과로 공제 제외"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1936,
+                                                                                    lineNumber: 1939,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.rentLoanPayment > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4284,7 +4477,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1939,
+                                                                                    lineNumber: 1942,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.mortgageInterest > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4295,7 +4488,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1942,
+                                                                                    lineNumber: 1945,
                                                                                     columnNumber: 69
                                                                                 }, this)
                                                                             ]
@@ -4307,7 +4500,7 @@ function CalculatorPage() {
                                                                                     children: "▸ 세액공제"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1948,
+                                                                                    lineNumber: 1951,
                                                                                     columnNumber: 65
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4320,7 +4513,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1949,
+                                                                                    lineNumber: 1952,
                                                                                     columnNumber: 65
                                                                                 }, this)
                                                                             ]
@@ -4328,13 +4521,13 @@ function CalculatorPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 1928,
+                                                                    lineNumber: 1931,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 1926,
+                                                            lineNumber: 1929,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4345,7 +4538,7 @@ function CalculatorPage() {
                                                                     children: "주택자금 공제"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 1957,
+                                                                    lineNumber: 1960,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4356,7 +4549,7 @@ function CalculatorPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 1958,
+                                                                    lineNumber: 1961,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4370,7 +4563,7 @@ function CalculatorPage() {
                                                                                     children: "소득공제:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1968,
+                                                                                    lineNumber: 1971,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -4379,7 +4572,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1968,
+                                                                            lineNumber: 1971,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.housingSubscription > 0 && inputs.salary <= 70000000 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4391,7 +4584,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1975,
+                                                                            lineNumber: 1978,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.housingSubscription > 0 && inputs.salary > 70000000 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4399,7 +4592,7 @@ function CalculatorPage() {
                                                                             children: "- 주택청약저축: 총급여 7천만원 초과로 공제 제외"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1978,
+                                                                            lineNumber: 1981,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.rentLoanPayment > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4411,7 +4604,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1981,
+                                                                            lineNumber: 1984,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.mortgageInterest > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4423,7 +4616,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1984,
+                                                                            lineNumber: 1987,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.monthlyRent > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4434,7 +4627,7 @@ function CalculatorPage() {
                                                                                     children: "세액공제:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 1987,
+                                                                                    lineNumber: 1990,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -4443,7 +4636,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1987,
+                                                                            lineNumber: 1990,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.monthlyRent > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4455,13 +4648,13 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 1990,
+                                                                            lineNumber: 1993,
                                                                             columnNumber: 61
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 1966,
+                                                                    lineNumber: 1969,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4469,13 +4662,13 @@ function CalculatorPage() {
                                                                     children: "💡 무주택 세대주 요건 충족 시 적용 (주택청약저축은 총급여 7천만원 이하)"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 1993,
+                                                                    lineNumber: 1996,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 1956,
+                                                            lineNumber: 1959,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
@@ -4490,7 +4683,7 @@ function CalculatorPage() {
                                                                     children: "💰 연금계좌 세부 항목"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2003,
+                                                                    lineNumber: 2006,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4510,18 +4703,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2009,
+                                                                                                lineNumber: 2012,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2008,
+                                                                                            lineNumber: 2011,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2006,
+                                                                                    lineNumber: 2009,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4531,13 +4724,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("pensionSavings", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2012,
+                                                                                    lineNumber: 2015,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2005,
+                                                                            lineNumber: 2008,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4554,18 +4747,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2023,
+                                                                                                lineNumber: 2026,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2022,
+                                                                                            lineNumber: 2025,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2020,
+                                                                                    lineNumber: 2023,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4575,13 +4768,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("irp", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2026,
+                                                                                    lineNumber: 2029,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2019,
+                                                                            lineNumber: 2022,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4598,18 +4791,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2037,
+                                                                                                lineNumber: 2040,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2036,
+                                                                                            lineNumber: 2039,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2034,
+                                                                                    lineNumber: 2037,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4619,25 +4812,25 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("isaTransfer", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2040,
+                                                                                    lineNumber: 2043,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2033,
+                                                                            lineNumber: 2036,
                                                                             columnNumber: 57
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2004,
+                                                                    lineNumber: 2007,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2002,
+                                                            lineNumber: 2005,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4648,7 +4841,7 @@ function CalculatorPage() {
                                                                     children: "🛡️ 보장성 보험료"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2052,
+                                                                    lineNumber: 2055,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4668,18 +4861,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2058,
+                                                                                                lineNumber: 2061,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2057,
+                                                                                            lineNumber: 2060,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2055,
+                                                                                    lineNumber: 2058,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4689,13 +4882,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("generalInsurance", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2061,
+                                                                                    lineNumber: 2064,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2054,
+                                                                            lineNumber: 2057,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4712,18 +4905,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2072,
+                                                                                                lineNumber: 2075,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2071,
+                                                                                            lineNumber: 2074,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2069,
+                                                                                    lineNumber: 2072,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -4733,25 +4926,25 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("disabledInsurance", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2075,
+                                                                                    lineNumber: 2078,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2068,
+                                                                            lineNumber: 2071,
                                                                             columnNumber: 57
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2053,
+                                                                    lineNumber: 2056,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2051,
+                                                            lineNumber: 2054,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4762,7 +4955,7 @@ function CalculatorPage() {
                                                                     children: "계산식"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2087,
+                                                                    lineNumber: 2090,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4775,7 +4968,7 @@ function CalculatorPage() {
                                                                                     children: "▸ 연금계좌"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2091,
+                                                                                    lineNumber: 2094,
                                                                                     columnNumber: 65
                                                                                 }, this),
                                                                                 inputs.pensionSavings > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4786,7 +4979,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2093,
+                                                                                    lineNumber: 2096,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.irp > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4797,7 +4990,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2096,
+                                                                                    lineNumber: 2099,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.isaTransfer > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4808,7 +5001,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2099,
+                                                                                    lineNumber: 2102,
                                                                                     columnNumber: 69
                                                                                 }, this)
                                                                             ]
@@ -4820,7 +5013,7 @@ function CalculatorPage() {
                                                                                     children: "▸ 보장성 보험료"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2105,
+                                                                                    lineNumber: 2108,
                                                                                     columnNumber: 65
                                                                                 }, this),
                                                                                 inputs.generalInsurance > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4831,7 +5024,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2107,
+                                                                                    lineNumber: 2110,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.disabledInsurance > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4842,7 +5035,7 @@ function CalculatorPage() {
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2110,
+                                                                                    lineNumber: 2113,
                                                                                     columnNumber: 69
                                                                                 }, this)
                                                                             ]
@@ -4850,13 +5043,13 @@ function CalculatorPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2088,
+                                                                    lineNumber: 2091,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2086,
+                                                            lineNumber: 2089,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4867,7 +5060,7 @@ function CalculatorPage() {
                                                                     children: "연금계좌·보험료 세액공제"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2119,
+                                                                    lineNumber: 2122,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4878,7 +5071,7 @@ function CalculatorPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2120,
+                                                                    lineNumber: 2123,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4892,7 +5085,7 @@ function CalculatorPage() {
                                                                                     children: "연금계좌:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2130,
+                                                                                    lineNumber: 2133,
                                                                                     columnNumber: 62
                                                                                 }, this),
                                                                                 " ",
@@ -4901,7 +5094,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2130,
+                                                                            lineNumber: 2133,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4912,7 +5105,7 @@ function CalculatorPage() {
                                                                                     children: "보장성보험료:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2135,
+                                                                                    lineNumber: 2138,
                                                                                     columnNumber: 62
                                                                                 }, this),
                                                                                 " ",
@@ -4921,7 +5114,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2135,
+                                                                            lineNumber: 2138,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         inputs.disabledInsurance > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4933,13 +5126,13 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2141,
+                                                                            lineNumber: 2144,
                                                                             columnNumber: 61
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2129,
+                                                                    lineNumber: 2132,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -4947,13 +5140,13 @@ function CalculatorPage() {
                                                                     children: "💡 연금저축 + IRP 합계 최대 900만원, ISA 전환 추가 300만원"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2144,
+                                                                    lineNumber: 2147,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2118,
+                                                            lineNumber: 2121,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
@@ -4968,7 +5161,7 @@ function CalculatorPage() {
                                                                     children: "❤️ 기부금 세부 항목"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2154,
+                                                                    lineNumber: 2157,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -4988,18 +5181,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2160,
+                                                                                                lineNumber: 2163,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2159,
+                                                                                            lineNumber: 2162,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2157,
+                                                                                    lineNumber: 2160,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -5009,13 +5202,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("politicalDonation", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2163,
+                                                                                    lineNumber: 2166,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2156,
+                                                                            lineNumber: 2159,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5032,18 +5225,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2174,
+                                                                                                lineNumber: 2177,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2173,
+                                                                                            lineNumber: 2176,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2171,
+                                                                                    lineNumber: 2174,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -5053,13 +5246,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("hometownDonation", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2177,
+                                                                                    lineNumber: 2180,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2170,
+                                                                            lineNumber: 2173,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5076,18 +5269,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2188,
+                                                                                                lineNumber: 2191,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2187,
+                                                                                            lineNumber: 2190,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2185,
+                                                                                    lineNumber: 2188,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -5097,13 +5290,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("hometownDisaster", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2191,
+                                                                                    lineNumber: 2194,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2184,
+                                                                            lineNumber: 2187,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5120,18 +5313,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2202,
+                                                                                                lineNumber: 2205,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2201,
+                                                                                            lineNumber: 2204,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2199,
+                                                                                    lineNumber: 2202,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -5141,13 +5334,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("specialDonation", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2205,
+                                                                                    lineNumber: 2208,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2198,
+                                                                            lineNumber: 2201,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5164,18 +5357,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2216,
+                                                                                                lineNumber: 2219,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2215,
+                                                                                            lineNumber: 2218,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2213,
+                                                                                    lineNumber: 2216,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -5185,13 +5378,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("employeeDonation", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2219,
+                                                                                    lineNumber: 2222,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2212,
+                                                                            lineNumber: 2215,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5208,18 +5401,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2230,
+                                                                                                lineNumber: 2233,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2229,
+                                                                                            lineNumber: 2232,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2227,
+                                                                                    lineNumber: 2230,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -5229,13 +5422,13 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("designatedDonation", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2233,
+                                                                                    lineNumber: 2236,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2226,
+                                                                            lineNumber: 2229,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5252,18 +5445,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2244,
+                                                                                                lineNumber: 2247,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2243,
+                                                                                            lineNumber: 2246,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2241,
+                                                                                    lineNumber: 2244,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -5273,25 +5466,25 @@ function CalculatorPage() {
                                                                                     onChange: (e)=>handleInputChange("religiousDonation", e.target.value)
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2247,
+                                                                                    lineNumber: 2250,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2240,
+                                                                            lineNumber: 2243,
                                                                             columnNumber: 57
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2155,
+                                                                    lineNumber: 2158,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2153,
+                                                            lineNumber: 2156,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5302,7 +5495,7 @@ function CalculatorPage() {
                                                                     children: "계산식"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2259,
+                                                                    lineNumber: 2262,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5356,7 +5549,7 @@ function CalculatorPage() {
                                                                                             children: "▸ 정치자금 기부금"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2315,
+                                                                                            lineNumber: 2318,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         Math.min(inputs.politicalDonation, 100000) > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5372,13 +5565,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2317,
+                                                                                                    lineNumber: 2320,
                                                                                                     columnNumber: 157
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2317,
+                                                                                            lineNumber: 2320,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         politicalExcess15 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5394,13 +5587,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2320,
+                                                                                                    lineNumber: 2323,
                                                                                                     columnNumber: 128
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2320,
+                                                                                            lineNumber: 2323,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         politicalExcess25 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5416,13 +5609,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2323,
+                                                                                                    lineNumber: 2326,
                                                                                                     columnNumber: 128
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2323,
+                                                                                            lineNumber: 2326,
                                                                                             columnNumber: 81
                                                                                         }, this)
                                                                                     ]
@@ -5434,7 +5627,7 @@ function CalculatorPage() {
                                                                                             children: "▸ 고향사랑 기부금"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2329,
+                                                                                            lineNumber: 2332,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         Math.min(hometownLimited, 100000) > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5450,13 +5643,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2331,
+                                                                                                    lineNumber: 2334,
                                                                                                     columnNumber: 148
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2331,
+                                                                                            lineNumber: 2334,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         Math.max(0, hometownLimited - 100000) > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5472,13 +5665,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2334,
+                                                                                                    lineNumber: 2337,
                                                                                                     columnNumber: 148
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2334,
+                                                                                            lineNumber: 2337,
                                                                                             columnNumber: 81
                                                                                         }, this)
                                                                                     ]
@@ -5490,7 +5683,7 @@ function CalculatorPage() {
                                                                                             children: "▸ 고향사랑 특별재난지역"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2340,
+                                                                                            lineNumber: 2343,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         Math.min(hometownDisasterLimited, 100000) > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5506,13 +5699,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2342,
+                                                                                                    lineNumber: 2345,
                                                                                                     columnNumber: 156
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2342,
+                                                                                            lineNumber: 2345,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         Math.max(0, hometownDisasterLimited - 100000) > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5528,13 +5721,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2345,
+                                                                                                    lineNumber: 2348,
                                                                                                     columnNumber: 156
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2345,
+                                                                                            lineNumber: 2348,
                                                                                             columnNumber: 81
                                                                                         }, this)
                                                                                     ]
@@ -5546,7 +5739,7 @@ function CalculatorPage() {
                                                                                             children: "▸ 특례기부금"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2351,
+                                                                                            lineNumber: 2354,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         Math.min(inputs.specialDonation, 10000000) > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5562,13 +5755,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2353,
+                                                                                                    lineNumber: 2356,
                                                                                                     columnNumber: 153
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2353,
+                                                                                            lineNumber: 2356,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         Math.max(0, inputs.specialDonation - 10000000) > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5584,13 +5777,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2356,
+                                                                                                    lineNumber: 2359,
                                                                                                     columnNumber: 157
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2356,
+                                                                                            lineNumber: 2359,
                                                                                             columnNumber: 81
                                                                                         }, this)
                                                                                     ]
@@ -5602,7 +5795,7 @@ function CalculatorPage() {
                                                                                             children: "▸ 우리사주조합 기부금"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2362,
+                                                                                            lineNumber: 2365,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5613,7 +5806,7 @@ function CalculatorPage() {
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2363,
+                                                                                            lineNumber: 2366,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         employee15 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5629,13 +5822,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2365,
+                                                                                                    lineNumber: 2368,
                                                                                                     columnNumber: 146
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2365,
+                                                                                            lineNumber: 2368,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         employee30 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5651,13 +5844,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2368,
+                                                                                                    lineNumber: 2371,
                                                                                                     columnNumber: 150
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2368,
+                                                                                            lineNumber: 2371,
                                                                                             columnNumber: 81
                                                                                         }, this)
                                                                                     ]
@@ -5669,7 +5862,7 @@ function CalculatorPage() {
                                                                                             children: "▸ 일반기부금 (종교단체 외)"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2374,
+                                                                                            lineNumber: 2377,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5680,7 +5873,7 @@ function CalculatorPage() {
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2375,
+                                                                                            lineNumber: 2378,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         designated15 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5696,13 +5889,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2377,
+                                                                                                    lineNumber: 2380,
                                                                                                     columnNumber: 148
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2377,
+                                                                                            lineNumber: 2380,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         designated30 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5718,13 +5911,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2380,
+                                                                                                    lineNumber: 2383,
                                                                                                     columnNumber: 152
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2380,
+                                                                                            lineNumber: 2383,
                                                                                             columnNumber: 81
                                                                                         }, this)
                                                                                     ]
@@ -5736,7 +5929,7 @@ function CalculatorPage() {
                                                                                             children: "▸ 일반기부금 (종교단체)"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2386,
+                                                                                            lineNumber: 2389,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5747,7 +5940,7 @@ function CalculatorPage() {
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2387,
+                                                                                            lineNumber: 2390,
                                                                                             columnNumber: 77
                                                                                         }, this),
                                                                                         religious15 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5763,13 +5956,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2389,
+                                                                                                    lineNumber: 2392,
                                                                                                     columnNumber: 147
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2389,
+                                                                                            lineNumber: 2392,
                                                                                             columnNumber: 81
                                                                                         }, this),
                                                                                         religious30 > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5785,13 +5978,13 @@ function CalculatorPage() {
                                                                                                     ]
                                                                                                 }, void 0, true, {
                                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                                    lineNumber: 2392,
+                                                                                                    lineNumber: 2395,
                                                                                                     columnNumber: 151
                                                                                                 }, this)
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2392,
+                                                                                            lineNumber: 2395,
                                                                                             columnNumber: 81
                                                                                         }, this)
                                                                                     ]
@@ -5801,13 +5994,13 @@ function CalculatorPage() {
                                                                     })()
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2260,
+                                                                    lineNumber: 2263,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2258,
+                                                            lineNumber: 2261,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5818,7 +6011,7 @@ function CalculatorPage() {
                                                                     children: "💗 기부금 세액공제"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2404,
+                                                                    lineNumber: 2407,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5859,7 +6052,7 @@ function CalculatorPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2405,
+                                                                    lineNumber: 2408,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -5873,7 +6066,7 @@ function CalculatorPage() {
                                                                                     children: "정치자금:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2445,
+                                                                                    lineNumber: 2448,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -5882,7 +6075,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2445,
+                                                                            lineNumber: 2448,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.hometownDonation > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5893,7 +6086,7 @@ function CalculatorPage() {
                                                                                     children: "고향사랑:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2448,
+                                                                                    lineNumber: 2451,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -5902,7 +6095,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2448,
+                                                                            lineNumber: 2451,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.hometownDisaster > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5913,7 +6106,7 @@ function CalculatorPage() {
                                                                                     children: "고향사랑 특별재난:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2451,
+                                                                                    lineNumber: 2454,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -5922,7 +6115,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2451,
+                                                                            lineNumber: 2454,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.specialDonation > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5933,7 +6126,7 @@ function CalculatorPage() {
                                                                                     children: "특례기부금:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2454,
+                                                                                    lineNumber: 2457,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -5942,7 +6135,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2454,
+                                                                            lineNumber: 2457,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.employeeDonation > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5953,7 +6146,7 @@ function CalculatorPage() {
                                                                                     children: "우리사주조합:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2457,
+                                                                                    lineNumber: 2460,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -5962,7 +6155,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2457,
+                                                                            lineNumber: 2460,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.designatedDonation > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5973,7 +6166,7 @@ function CalculatorPage() {
                                                                                     children: "일반기부금(종교단체 외):"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2460,
+                                                                                    lineNumber: 2463,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -5982,7 +6175,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2460,
+                                                                            lineNumber: 2463,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.religiousDonation > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -5993,7 +6186,7 @@ function CalculatorPage() {
                                                                                     children: "종교단체:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2463,
+                                                                                    lineNumber: 2466,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -6002,13 +6195,13 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2463,
+                                                                            lineNumber: 2466,
                                                                             columnNumber: 61
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2443,
+                                                                    lineNumber: 2446,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6020,13 +6213,13 @@ function CalculatorPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2466,
+                                                                    lineNumber: 2469,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2403,
+                                                            lineNumber: 2406,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
@@ -6041,7 +6234,7 @@ function CalculatorPage() {
                                                                     children: "👶 자녀 세액공제"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2476,
+                                                                    lineNumber: 2479,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6061,18 +6254,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2482,
+                                                                                                lineNumber: 2485,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2481,
+                                                                                            lineNumber: 2484,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2479,
+                                                                                    lineNumber: 2482,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -6087,13 +6280,13 @@ function CalculatorPage() {
                                                                                             }))
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2485,
+                                                                                    lineNumber: 2488,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2478,
+                                                                            lineNumber: 2481,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6110,18 +6303,18 @@ function CalculatorPage() {
                                                                                                 className: "text-gray-400 cursor-help"
                                                                                             }, void 0, false, {
                                                                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                                                                lineNumber: 2498,
+                                                                                                lineNumber: 2501,
                                                                                                 columnNumber: 69
                                                                                             }, this)
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2497,
+                                                                                            lineNumber: 2500,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2495,
+                                                                                    lineNumber: 2498,
                                                                                     columnNumber: 61
                                                                                 }, this),
                                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("select", {
@@ -6137,7 +6330,7 @@ function CalculatorPage() {
                                                                                             children: "선택 안함"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2506,
+                                                                                            lineNumber: 2509,
                                                                                             columnNumber: 65
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -6145,7 +6338,7 @@ function CalculatorPage() {
                                                                                             children: "첫째 (30만원)"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2507,
+                                                                                            lineNumber: 2510,
                                                                                             columnNumber: 65
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -6153,7 +6346,7 @@ function CalculatorPage() {
                                                                                             children: "둘째 (50만원)"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2508,
+                                                                                            lineNumber: 2511,
                                                                                             columnNumber: 65
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -6161,7 +6354,7 @@ function CalculatorPage() {
                                                                                             children: "셋째 이상 1명 (70만원)"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2509,
+                                                                                            lineNumber: 2512,
                                                                                             columnNumber: 65
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -6169,7 +6362,7 @@ function CalculatorPage() {
                                                                                             children: "셋째 이상 2명 (140만원)"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2510,
+                                                                                            lineNumber: 2513,
                                                                                             columnNumber: 65
                                                                                         }, this),
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("option", {
@@ -6177,31 +6370,31 @@ function CalculatorPage() {
                                                                                             children: "셋째 이상 3명 (210만원)"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2511,
+                                                                                            lineNumber: 2514,
                                                                                             columnNumber: 65
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2501,
+                                                                                    lineNumber: 2504,
                                                                                     columnNumber: 61
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2494,
+                                                                            lineNumber: 2497,
                                                                             columnNumber: 57
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2477,
+                                                                    lineNumber: 2480,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2475,
+                                                            lineNumber: 2478,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6212,7 +6405,7 @@ function CalculatorPage() {
                                                                     children: "계산식"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2519,
+                                                                    lineNumber: 2522,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6225,7 +6418,7 @@ function CalculatorPage() {
                                                                                     children: "▸ 만 8세 이상 자녀"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2523,
+                                                                                    lineNumber: 2526,
                                                                                     columnNumber: 65
                                                                                 }, this),
                                                                                 inputs.childrenOver8 === 1 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6236,13 +6429,13 @@ function CalculatorPage() {
                                                                                             children: "250,000원"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2525,
+                                                                                            lineNumber: 2528,
                                                                                             columnNumber: 77
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2525,
+                                                                                    lineNumber: 2528,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.childrenOver8 === 2 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6253,13 +6446,13 @@ function CalculatorPage() {
                                                                                             children: "550,000원"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2528,
+                                                                                            lineNumber: 2531,
                                                                                             columnNumber: 77
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2528,
+                                                                                    lineNumber: 2531,
                                                                                     columnNumber: 69
                                                                                 }, this),
                                                                                 inputs.childrenOver8 >= 3 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6277,13 +6470,13 @@ function CalculatorPage() {
                                                                                             ]
                                                                                         }, void 0, true, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2531,
+                                                                                            lineNumber: 2534,
                                                                                             columnNumber: 151
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2531,
+                                                                                    lineNumber: 2534,
                                                                                     columnNumber: 69
                                                                                 }, this)
                                                                             ]
@@ -6295,7 +6488,7 @@ function CalculatorPage() {
                                                                                     children: "▸ 출생·입양"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2537,
+                                                                                    lineNumber: 2540,
                                                                                     columnNumber: 65
                                                                                 }, this),
                                                                                 inputs.birthAdoption === "first" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6304,23 +6497,6 @@ function CalculatorPage() {
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                                             className: "font-bold text-green-600",
                                                                                             children: "300,000원"
-                                                                                        }, void 0, false, {
-                                                                                            fileName: "[project]/app/calculator/page.tsx",
-                                                                                            lineNumber: 2539,
-                                                                                            columnNumber: 77
-                                                                                        }, this)
-                                                                                    ]
-                                                                                }, void 0, true, {
-                                                                                    fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2539,
-                                                                                    columnNumber: 69
-                                                                                }, this),
-                                                                                inputs.birthAdoption === "second" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                                                                    children: [
-                                                                                        "　둘째: ",
-                                                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                                                            className: "font-bold text-green-600",
-                                                                                            children: "500,000원"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
                                                                                             lineNumber: 2542,
@@ -6332,16 +6508,16 @@ function CalculatorPage() {
                                                                                     lineNumber: 2542,
                                                                                     columnNumber: 69
                                                                                 }, this),
-                                                                                inputs.birthAdoption === "third1" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                                                inputs.birthAdoption === "second" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                                                                     children: [
-                                                                                        "　셋째 이상 1명: 700,000원 × 1명 = ",
+                                                                                        "　둘째: ",
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                                             className: "font-bold text-green-600",
-                                                                                            children: "700,000원"
+                                                                                            children: "500,000원"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
                                                                                             lineNumber: 2545,
-                                                                                            columnNumber: 99
+                                                                                            columnNumber: 77
                                                                                         }, this)
                                                                                     ]
                                                                                 }, void 0, true, {
@@ -6349,12 +6525,12 @@ function CalculatorPage() {
                                                                                     lineNumber: 2545,
                                                                                     columnNumber: 69
                                                                                 }, this),
-                                                                                inputs.birthAdoption === "third2" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                                                inputs.birthAdoption === "third1" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                                                                     children: [
-                                                                                        "　셋째 이상 2명: 700,000원 × 2명 = ",
+                                                                                        "　셋째 이상 1명: 700,000원 × 1명 = ",
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                                             className: "font-bold text-green-600",
-                                                                                            children: "1,400,000원"
+                                                                                            children: "700,000원"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
                                                                                             lineNumber: 2548,
@@ -6366,12 +6542,12 @@ function CalculatorPage() {
                                                                                     lineNumber: 2548,
                                                                                     columnNumber: 69
                                                                                 }, this),
-                                                                                inputs.birthAdoption === "third3" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                                                inputs.birthAdoption === "third2" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                                                                     children: [
-                                                                                        "　셋째 이상 3명: 700,000원 × 3명 = ",
+                                                                                        "　셋째 이상 2명: 700,000원 × 2명 = ",
                                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                                             className: "font-bold text-green-600",
-                                                                                            children: "2,100,000원"
+                                                                                            children: "1,400,000원"
                                                                                         }, void 0, false, {
                                                                                             fileName: "[project]/app/calculator/page.tsx",
                                                                                             lineNumber: 2551,
@@ -6382,19 +6558,36 @@ function CalculatorPage() {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
                                                                                     lineNumber: 2551,
                                                                                     columnNumber: 69
+                                                                                }, this),
+                                                                                inputs.birthAdoption === "third3" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                                                    children: [
+                                                                                        "　셋째 이상 3명: 700,000원 × 3명 = ",
+                                                                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                                                            className: "font-bold text-green-600",
+                                                                                            children: "2,100,000원"
+                                                                                        }, void 0, false, {
+                                                                                            fileName: "[project]/app/calculator/page.tsx",
+                                                                                            lineNumber: 2554,
+                                                                                            columnNumber: 99
+                                                                                        }, this)
+                                                                                    ]
+                                                                                }, void 0, true, {
+                                                                                    fileName: "[project]/app/calculator/page.tsx",
+                                                                                    lineNumber: 2554,
+                                                                                    columnNumber: 69
                                                                                 }, this)
                                                                             ]
                                                                         }, void 0, true)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2520,
+                                                                    lineNumber: 2523,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2518,
+                                                            lineNumber: 2521,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6405,7 +6598,7 @@ function CalculatorPage() {
                                                                     children: "👶 자녀 세액공제"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2560,
+                                                                    lineNumber: 2563,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6429,7 +6622,7 @@ function CalculatorPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2561,
+                                                                    lineNumber: 2564,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6443,7 +6636,7 @@ function CalculatorPage() {
                                                                                     children: "자녀 기본공제:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2579,
+                                                                                    lineNumber: 2582,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -6452,7 +6645,7 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2579,
+                                                                            lineNumber: 2582,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         inputs.birthAdoption !== "none" && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6463,7 +6656,7 @@ function CalculatorPage() {
                                                                                     children: "출생·입양:"
                                                                                 }, void 0, false, {
                                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                                    lineNumber: 2586,
+                                                                                    lineNumber: 2589,
                                                                                     columnNumber: 66
                                                                                 }, this),
                                                                                 " ",
@@ -6472,13 +6665,13 @@ function CalculatorPage() {
                                                                             ]
                                                                         }, void 0, true, {
                                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                                            lineNumber: 2586,
+                                                                            lineNumber: 2589,
                                                                             columnNumber: 61
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2577,
+                                                                    lineNumber: 2580,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6486,13 +6679,13 @@ function CalculatorPage() {
                                                                     children: "💡 기본공제 대상 자녀 중 출생·입양자가 있으면 추가 공제"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                                    lineNumber: 2595,
+                                                                    lineNumber: 2598,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/calculator/page.tsx",
-                                                            lineNumber: 2559,
+                                                            lineNumber: 2562,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
@@ -6522,15 +6715,15 @@ function CalculatorPage() {
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
                         onClick: handleCalculate,
                         disabled: isCalculating,
-                        className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("neo-btn w-full", isCalculating ? "bg-gray-300 cursor-not-allowed" : "bg-neo-orange hover:bg-neo-yellow"),
+                        className: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$clsx$2f$dist$2f$clsx$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"])("neo-btn w-full text-xl py-4", isCalculating ? "bg-gray-300 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800"),
                         children: isCalculating ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$refresh$2d$cw$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__RefreshCw$3e$__["RefreshCw"], {
-                                    size: 20,
+                                    size: 24,
                                     className: "animate-spin"
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2619,
+                                    lineNumber: 2622,
                                     columnNumber: 29
                                 }, this),
                                 "계산 중..."
@@ -6538,10 +6731,10 @@ function CalculatorPage() {
                         }, void 0, true) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$calculator$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Calculator$3e$__["Calculator"], {
-                                    size: 20
+                                    size: 24
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2624,
+                                    lineNumber: 2627,
                                     columnNumber: 29
                                 }, this),
                                 "예상 환급액 계산하기"
@@ -6549,7 +6742,7 @@ function CalculatorPage() {
                         }, void 0, true)
                     }, void 0, false, {
                         fileName: "[project]/app/calculator/page.tsx",
-                        lineNumber: 2607,
+                        lineNumber: 2610,
                         columnNumber: 17
                     }, this)
                 ]
@@ -6571,7 +6764,7 @@ function CalculatorPage() {
                                     children: "⑨ 예상 환급액"
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2636,
+                                    lineNumber: 2639,
                                     columnNumber: 25
                                 }, this),
                                 (()=>{
@@ -6594,7 +6787,7 @@ function CalculatorPage() {
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                lineNumber: 2652,
+                                                lineNumber: 2655,
                                                 columnNumber: 37
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6605,7 +6798,7 @@ function CalculatorPage() {
                                                         children: "▸ 소득세"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2659,
+                                                        lineNumber: 2662,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6617,7 +6810,7 @@ function CalculatorPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2660,
+                                                        lineNumber: 2663,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6629,7 +6822,7 @@ function CalculatorPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2661,
+                                                        lineNumber: 2664,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6641,7 +6834,7 @@ function CalculatorPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2662,
+                                                        lineNumber: 2665,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6649,7 +6842,7 @@ function CalculatorPage() {
                                                         children: "▸ 지방소득세"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2664,
+                                                        lineNumber: 2667,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6661,7 +6854,7 @@ function CalculatorPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2665,
+                                                        lineNumber: 2668,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6673,7 +6866,7 @@ function CalculatorPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2666,
+                                                        lineNumber: 2669,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6685,7 +6878,7 @@ function CalculatorPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2667,
+                                                        lineNumber: 2670,
                                                         columnNumber: 41
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -6701,13 +6894,13 @@ function CalculatorPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/calculator/page.tsx",
-                                                        lineNumber: 2669,
+                                                        lineNumber: 2672,
                                                         columnNumber: 41
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/calculator/page.tsx",
-                                                lineNumber: 2658,
+                                                lineNumber: 2661,
                                                 columnNumber: 37
                                             }, this)
                                         ]
@@ -6718,13 +6911,13 @@ function CalculatorPage() {
                                     children: "계산을 시작하세요"
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2677,
+                                    lineNumber: 2680,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/calculator/page.tsx",
-                            lineNumber: 2635,
+                            lineNumber: 2638,
                             columnNumber: 21
                         }, this),
                         result && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6735,7 +6928,7 @@ function CalculatorPage() {
                                     children: "📋 계산 플로우"
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2686,
+                                    lineNumber: 2689,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6749,7 +6942,7 @@ function CalculatorPage() {
                                                     children: "① 총급여액"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2690,
+                                                    lineNumber: 2693,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6760,13 +6953,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2691,
+                                                    lineNumber: 2694,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2689,
+                                            lineNumber: 2692,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6777,7 +6970,7 @@ function CalculatorPage() {
                                                     children: "② 근로소득공제"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2696,
+                                                    lineNumber: 2699,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6789,13 +6982,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2697,
+                                                    lineNumber: 2700,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2695,
+                                            lineNumber: 2698,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6806,7 +6999,7 @@ function CalculatorPage() {
                                                     children: "③ 근로소득금액"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2702,
+                                                    lineNumber: 2705,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6817,13 +7010,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2703,
+                                                    lineNumber: 2706,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2701,
+                                            lineNumber: 2704,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6834,7 +7027,7 @@ function CalculatorPage() {
                                                     children: "④ 소득공제 합계"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2708,
+                                                    lineNumber: 2711,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6846,13 +7039,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2709,
+                                                    lineNumber: 2712,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2707,
+                                            lineNumber: 2710,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6863,7 +7056,7 @@ function CalculatorPage() {
                                                     children: "⑤ 과세표준"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2714,
+                                                    lineNumber: 2717,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6874,13 +7067,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2715,
+                                                    lineNumber: 2718,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2713,
+                                            lineNumber: 2716,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6891,7 +7084,7 @@ function CalculatorPage() {
                                                     children: "⑥ 산출세액"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2720,
+                                                    lineNumber: 2723,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6902,13 +7095,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2721,
+                                                    lineNumber: 2724,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2719,
+                                            lineNumber: 2722,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6919,7 +7112,7 @@ function CalculatorPage() {
                                                     children: "⑦ 세액공제 합계"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2726,
+                                                    lineNumber: 2729,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6931,13 +7124,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2727,
+                                                    lineNumber: 2730,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2725,
+                                            lineNumber: 2728,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6948,7 +7141,7 @@ function CalculatorPage() {
                                                     children: "⑧ 결정세액"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2732,
+                                                    lineNumber: 2735,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6959,13 +7152,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2733,
+                                                    lineNumber: 2736,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2731,
+                                            lineNumber: 2734,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -6976,7 +7169,7 @@ function CalculatorPage() {
                                                     children: "기납부세액 (소득세)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2738,
+                                                    lineNumber: 2741,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -6988,13 +7181,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2739,
+                                                    lineNumber: 2742,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2737,
+                                            lineNumber: 2740,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7005,7 +7198,7 @@ function CalculatorPage() {
                                                     children: "기납부세액 (지방소득세)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2742,
+                                                    lineNumber: 2745,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7017,25 +7210,25 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2743,
+                                                    lineNumber: 2746,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2741,
+                                            lineNumber: 2744,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2687,
+                                    lineNumber: 2690,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/calculator/page.tsx",
-                            lineNumber: 2685,
+                            lineNumber: 2688,
                             columnNumber: 25
                         }, this),
                         result && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7046,7 +7239,7 @@ function CalculatorPage() {
                                     children: "📊 공제 내역 상세"
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2752,
+                                    lineNumber: 2755,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7059,7 +7252,7 @@ function CalculatorPage() {
                                                     children: "소득공제 (④)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2755,
+                                                    lineNumber: 2758,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7070,13 +7263,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2756,
+                                                    lineNumber: 2759,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2754,
+                                            lineNumber: 2757,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7086,7 +7279,7 @@ function CalculatorPage() {
                                                     children: "인적공제"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2759,
+                                                    lineNumber: 2762,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7096,13 +7289,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2760,
+                                                    lineNumber: 2763,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2758,
+                                            lineNumber: 2761,
                                             columnNumber: 33
                                         }, this),
                                         result.socialInsuranceDeduction > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7112,7 +7305,7 @@ function CalculatorPage() {
                                                     children: "4대보험"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2764,
+                                                    lineNumber: 2767,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7122,13 +7315,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2765,
+                                                    lineNumber: 2768,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2763,
+                                            lineNumber: 2766,
                                             columnNumber: 37
                                         }, this),
                                         result.cardDeduction > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7138,7 +7331,7 @@ function CalculatorPage() {
                                                     children: "신용카드 등"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2770,
+                                                    lineNumber: 2773,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7148,13 +7341,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2771,
+                                                    lineNumber: 2774,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2769,
+                                            lineNumber: 2772,
                                             columnNumber: 37
                                         }, this),
                                         result.housingDeduction > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7164,7 +7357,7 @@ function CalculatorPage() {
                                                     children: "주택자금"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2776,
+                                                    lineNumber: 2779,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7174,13 +7367,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2777,
+                                                    lineNumber: 2780,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2775,
+                                            lineNumber: 2778,
                                             columnNumber: 37
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7190,7 +7383,7 @@ function CalculatorPage() {
                                                     children: "세액공제 (⑦)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2781,
+                                                    lineNumber: 2784,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7201,13 +7394,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2782,
+                                                    lineNumber: 2785,
                                                     columnNumber: 37
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2780,
+                                            lineNumber: 2783,
                                             columnNumber: 33
                                         }, this),
                                         result.earnedIncomeTaxCredit > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7217,7 +7410,7 @@ function CalculatorPage() {
                                                     children: "근로소득세액공제"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2786,
+                                                    lineNumber: 2789,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7227,13 +7420,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2787,
+                                                    lineNumber: 2790,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2785,
+                                            lineNumber: 2788,
                                             columnNumber: 37
                                         }, this),
                                         result.childTaxCredit > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7243,7 +7436,7 @@ function CalculatorPage() {
                                                     children: "자녀세액공제"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2792,
+                                                    lineNumber: 2795,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7253,13 +7446,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2793,
+                                                    lineNumber: 2796,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2791,
+                                            lineNumber: 2794,
                                             columnNumber: 37
                                         }, this),
                                         result.medicalDeduction > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7269,7 +7462,7 @@ function CalculatorPage() {
                                                     children: "의료비"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2798,
+                                                    lineNumber: 2801,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7279,13 +7472,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2799,
+                                                    lineNumber: 2802,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2797,
+                                            lineNumber: 2800,
                                             columnNumber: 37
                                         }, this),
                                         result.educationDeduction > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7295,7 +7488,7 @@ function CalculatorPage() {
                                                     children: "교육비"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2804,
+                                                    lineNumber: 2807,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7305,13 +7498,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2805,
+                                                    lineNumber: 2808,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2803,
+                                            lineNumber: 2806,
                                             columnNumber: 37
                                         }, this),
                                         result.pensionDeduction > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7321,7 +7514,7 @@ function CalculatorPage() {
                                                     children: "연금·보험료"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2810,
+                                                    lineNumber: 2813,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7331,13 +7524,13 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2811,
+                                                    lineNumber: 2814,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2809,
+                                            lineNumber: 2812,
                                             columnNumber: 37
                                         }, this),
                                         result.donationDeduction > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7347,7 +7540,7 @@ function CalculatorPage() {
                                                     children: "기부금"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2816,
+                                                    lineNumber: 2819,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -7357,25 +7550,25 @@ function CalculatorPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/calculator/page.tsx",
-                                                    lineNumber: 2817,
+                                                    lineNumber: 2820,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2815,
+                                            lineNumber: 2818,
                                             columnNumber: 37
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2753,
+                                    lineNumber: 2756,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/calculator/page.tsx",
-                            lineNumber: 2751,
+                            lineNumber: 2754,
                             columnNumber: 25
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -7385,14 +7578,14 @@ function CalculatorPage() {
                                     size: 20
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2825,
+                                    lineNumber: 2828,
                                     columnNumber: 25
                                 }, this),
                                 "AI 최적화 제안 받기"
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/calculator/page.tsx",
-                            lineNumber: 2824,
+                            lineNumber: 2827,
                             columnNumber: 21
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -7406,14 +7599,14 @@ function CalculatorPage() {
                                             className: "text-red-500"
                                         }, void 0, false, {
                                             fileName: "[project]/app/calculator/page.tsx",
-                                            lineNumber: 2831,
+                                            lineNumber: 2834,
                                             columnNumber: 29
                                         }, this),
                                         "주의사항"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2830,
+                                    lineNumber: 2833,
                                     columnNumber: 25
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -7421,24 +7614,24 @@ function CalculatorPage() {
                                     children: "이 결과는 시뮬레이션 값이며, 실제 국세청 확정 자료와 다를 수 있습니다."
                                 }, void 0, false, {
                                     fileName: "[project]/app/calculator/page.tsx",
-                                    lineNumber: 2834,
+                                    lineNumber: 2837,
                                     columnNumber: 25
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/calculator/page.tsx",
-                            lineNumber: 2829,
+                            lineNumber: 2832,
                             columnNumber: 21
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/calculator/page.tsx",
-                    lineNumber: 2633,
+                    lineNumber: 2636,
                     columnNumber: 17
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/calculator/page.tsx",
-                lineNumber: 2632,
+                lineNumber: 2635,
                 columnNumber: 13
             }, this)
         ]

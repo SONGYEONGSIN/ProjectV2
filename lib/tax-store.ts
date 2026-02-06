@@ -95,10 +95,16 @@ export interface AdminData {
         educationUniv2: number;       // 교육비(대학)-자녀2
         educationUniv3: number;       // 교육비(대학)-자녀3
         housing: number;           // 주택마련저축 (레거시, 청약저축으로 이관)
-        housingSubscription: number;  // 주택자금(청약저축) - 소득공제
+        housingSubscription: number;  // 주택자금(청약저축) - 소득공제 (합계)
+        housingSubscriptionHead: number;  // 주택자금(청약저축) - 세대주
+        housingSubscriptionSpouse: number;  // 주택자금(청약저축) - 배우자
         housingRent: number;          // 주택자금(월세) - 세액공제
-        housingLoan: number;          // 주택자금(임차차입금) - 소득공제
-        housingMortgage: number;      // 주택자금(장기주택저당차입금) - 소득공제
+        housingLoan: number;          // 주택자금(임차차입금원리금상환액) - 소득공제
+        housingMortgage: number;      // 주택자금(장기주택) - 소득공제 (레거시 호환)
+        housingMortgage15Fixed: number;    // 장기주택 15년이상 고정금리+비거치식 (한도 1,800만원)
+        housingMortgage15Either: number;   // 장기주택 15년이상 고정금리 or 비거치식 (한도 1,500만원)
+        housingMortgage15Other: number;    // 장기주택 15년이상 기타 (한도 500만원)
+        housingMortgage10Either: number;   // 장기주택 10년이상 고정금리 or 비거치식 (한도 300만원)
         pension: number;           // 연금저축/IRP (레거시 호환)
         pensionSavings: number;    // 연금저축 (연 600만원 한도)
         pensionIRP: number;        // 퇴직연금(IRP) (연금저축 포함 연 900만원 한도)
@@ -254,6 +260,19 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
     const spending = adminData.spending;
     const deductions = adminData.deductions;
 
+    // spendingItems에서 직접 금액을 계산하는 헬퍼 (레거시 데이터 호환용)
+    const getSpendingItemAmount = (name: string): number => {
+        if (!adminData.spendingItems) return 0;
+        return adminData.spendingItems
+            .filter(i => i.name && i.name.includes(name))
+            .reduce((sum, item) => {
+                const amount = typeof item.amount === 'string'
+                    ? parseInt(item.amount.replace(/[^0-9]/g, '')) || 0
+                    : item.amount || 0;
+                return sum + amount;
+            }, 0);
+    };
+
     // 신용카드 등 소득공제 계산
     const totalCardSpending = spending.creditCard + spending.debitCard + spending.cash +
         spending.publicTransport + spending.traditionalMarket + spending.culture;
@@ -367,15 +386,32 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
             status: "optimal",
             thresholdInfo: `부양가족 ${dependents}명 × 150만원`,
         },
-        {
-            id: "0-1",
-            category: "4대보험",
-            type: "소득공제",
-            amount: socialInsurance,
-            limit: socialInsurance,    // 전액 공제, 한도 없음
-            status: "optimal",
-            thresholdInfo: "납부액 전액 공제",
-        },
+        (() => {
+            // 4대보험 상세 내역
+            const nationalPension = adminData.salary.nationalPension || 0;
+            const healthInsurance = adminData.salary.healthInsurance || 0;
+            const longTermCare = adminData.salary.longTermCare || 0;
+            const employmentInsurance = adminData.salary.employmentInsurance || 0;
+            const total = nationalPension + healthInsurance + longTermCare + employmentInsurance;
+
+            const infoLines: string[] = [];
+            infoLines.push(`국민연금: ${nationalPension.toLocaleString("ko-KR")}원`);
+            infoLines.push(`건강보험: ${healthInsurance.toLocaleString("ko-KR")}원`);
+            infoLines.push(`요양보험: ${longTermCare.toLocaleString("ko-KR")}원`);
+            infoLines.push(`고용보험: ${employmentInsurance.toLocaleString("ko-KR")}원`);
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${total.toLocaleString("ko-KR")}원`);
+
+            return {
+                id: "0-1",
+                category: "4대보험",
+                type: "소득공제" as const,
+                amount: total,
+                limit: total,    // 전액 공제, 한도 없음
+                status: "optimal" as const,
+                thresholdInfo: infoLines.join("\n"),
+            };
+        })(),
         {
             id: "1",
             category: "신용카드 등 사용금액",
@@ -385,43 +421,167 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
             status: getCardStatus(),
             thresholdInfo: `25% 문턱: ${Math.round(minSpending).toLocaleString("ko-KR")}원\n지출: ${totalCardSpending.toLocaleString("ko-KR")}원\n초과분: ${Math.max(0, totalCardSpending - Math.round(minSpending)).toLocaleString("ko-KR")}원`,
         },
-        {
-            id: "2",
-            category: "주택자금(청약저축)",
-            type: "소득공제",
-            amount: deductions.housingSubscription || deductions.housing || 0,
-            limit: 3000000,                               // 고정 한도 300만원
-            status: getStatus((deductions.housingSubscription || deductions.housing || 0) / 3000000),
-            thresholdInfo: "연 300만원 한도, 40% 공제",
-        },
-        {
-            id: "2-1",
-            category: "주택자금(임차차입금)",
-            type: "소득공제",
-            amount: deductions.housingLoan || 0,
-            limit: 4000000,                               // 고정 한도 400만원
-            status: getStatus((deductions.housingLoan || 0) / 4000000),
-            thresholdInfo: "연 400만원 한도, 40% 공제",
-        },
-        {
-            id: "2-2",
-            category: "주택자금(장기주택저당차입금)",
-            type: "소득공제",
-            amount: deductions.housingMortgage || 0,
-            limit: 18000000,                              // 고정 한도 1,800만원
-            status: getStatus((deductions.housingMortgage || 0) / 18000000),
-            thresholdInfo: "연 300~1,800만원 한도\n이자 전액 공제",
-        },
-        {
-            id: "2-3",
-            category: "월세 세액공제",
-            type: "세액공제",
-            amount: Math.min(deductions.housingRent || 0, 10000000) * 0.17,  // 17% 세액공제율 적용
-            limit: 10000000,                                                  // 납입 한도: 1,000만원
-            status: getStatus((deductions.housingRent || 0) / 10000000),
-            thresholdInfo: "연 1,000만원 한도 × 17%",
-            maxBenefit: 10000000 * 0.17, // 최대 170만원
-        },
+        (() => {
+            // 주택자금 - 청약저축 + 임차차입금원리금상환액
+            // 청약저축: 납입한도 300만원
+            // 임차차입금: 원리금상환액
+            // 공제율: 40%, 공제한도: 400만원 (최종 공제액 기준)
+
+            // 청약저축 데이터 (세대주/배우자)
+            const headAmount = deductions.housingSubscriptionHead ?? getSpendingItemAmount("주택자금(청약저축) - 세대주");
+            const spouseAmount = deductions.housingSubscriptionSpouse ?? getSpendingItemAmount("주택자금(청약저축) - 배우자");
+            const subscriptionTotal = headAmount + spouseAmount;
+
+            // 청약저축 납입한도 300만원 적용
+            const limitedSubscription = Math.min(subscriptionTotal, 3000000);
+
+            // 임차차입금원리금상환액
+            const loanAmount = deductions.housingLoan || 0;
+
+            // 합산액 (청약저축 한도 적용 후 + 임차차입금)
+            const combinedTotal = limitedSubscription + loanAmount;
+
+            // 공제액 계산: 합산액 × 40%
+            const calculatedDeduction = Math.round(combinedTotal * 0.4);
+
+            // 공제한도 400만원 적용 (최종 공제액 기준)
+            const finalDeduction = Math.min(calculatedDeduction, 4000000);
+
+            // thresholdInfo 생성
+            const infoLines: string[] = [];
+            infoLines.push("【 청약저축 + 임차차입금 합산 】");
+            if (headAmount > 0 || spouseAmount > 0) {
+                infoLines.push(`청약저축:`);
+                if (headAmount > 0) infoLines.push(`  세대주: ${headAmount.toLocaleString("ko-KR")}원`);
+                if (spouseAmount > 0) infoLines.push(`  배우자: ${spouseAmount.toLocaleString("ko-KR")}원`);
+                if (subscriptionTotal > 3000000) {
+                    infoLines.push(`  (납입한도 300만원 적용)`);
+                }
+            }
+            if (loanAmount > 0) {
+                infoLines.push(`임차차입금: ${loanAmount.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`──────────────`);
+            infoLines.push(`합산: ${combinedTotal.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${combinedTotal.toLocaleString("ko-KR")} × 40%`);
+            infoLines.push(`= ${calculatedDeduction.toLocaleString("ko-KR")}원`);
+            if (calculatedDeduction > 4000000) {
+                infoLines.push(`(공제한도 400만원 적용)`);
+                infoLines.push(`→ ${finalDeduction.toLocaleString("ko-KR")}원`);
+            }
+
+            return {
+                id: "2",
+                category: "주택자금(청약저축+임차차입금)",
+                type: "소득공제" as const,
+                amount: finalDeduction,
+                limit: 4000000,
+                status: getStatus(calculatedDeduction / 4000000),
+                thresholdInfo: infoLines.join("\n"),
+            };
+        })(),
+        (() => {
+            // 장기주택저당차입금이자상환액 - 옵션별 한도 적용
+            // 15년이상 고정금리+비거치식: 1,800만원
+            // 15년이상 고정금리 or 비거치식: 1,500만원
+            // 15년이상 기타: 500만원
+            // 10년이상 고정금리 or 비거치식: 300만원
+
+            const mortgage15Fixed = deductions.housingMortgage15Fixed || 0;
+            const mortgage15Either = deductions.housingMortgage15Either || 0;
+            const mortgage15Other = deductions.housingMortgage15Other || 0;
+            const mortgage10Either = deductions.housingMortgage10Either || 0;
+
+            // 레거시 호환
+            const mortgageLegacy = deductions.housingMortgage || 0;
+
+            // 옵션별 한도 적용
+            const limited15Fixed = Math.min(mortgage15Fixed, 18000000);
+            const limited15Either = Math.min(mortgage15Either, 15000000);
+            const limited15Other = Math.min(mortgage15Other, 5000000);
+            const limited10Either = Math.min(mortgage10Either, 3000000);
+
+            // 총 공제액 (이자 전액 공제이므로 한도 적용 금액 = 공제액)
+            const totalDeduction = limited15Fixed + limited15Either + limited15Other + limited10Either + mortgageLegacy;
+            const maxLimit = 18000000;  // 최대 한도 표시용
+
+            // thresholdInfo 생성
+            const infoLines: string[] = [];
+            infoLines.push("【 장기주택저당차입금 이자상환액 】");
+            if (mortgage15Fixed > 0) {
+                infoLines.push(`15년↑ 고정+비거치: ${mortgage15Fixed.toLocaleString("ko-KR")}원`);
+                if (mortgage15Fixed > 18000000) infoLines.push(`  (한도 1,800만원 적용)`);
+            }
+            if (mortgage15Either > 0) {
+                infoLines.push(`15년↑ 고정or비거치: ${mortgage15Either.toLocaleString("ko-KR")}원`);
+                if (mortgage15Either > 15000000) infoLines.push(`  (한도 1,500만원 적용)`);
+            }
+            if (mortgage15Other > 0) {
+                infoLines.push(`15년↑ 기타: ${mortgage15Other.toLocaleString("ko-KR")}원`);
+                if (mortgage15Other > 5000000) infoLines.push(`  (한도 500만원 적용)`);
+            }
+            if (mortgage10Either > 0) {
+                infoLines.push(`10년↑ 고정or비거치: ${mortgage10Either.toLocaleString("ko-KR")}원`);
+                if (mortgage10Either > 3000000) infoLines.push(`  (한도 300만원 적용)`);
+            }
+            if (mortgageLegacy > 0) {
+                infoLines.push(`기타: ${mortgageLegacy.toLocaleString("ko-KR")}원`);
+            }
+            if (totalDeduction > 0) {
+                infoLines.push(`──────────────`);
+                infoLines.push(`= ${totalDeduction.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`지출: 0원`);
+            }
+
+            return {
+                id: "2-2",
+                category: "주택자금(장기주택저당차입금이자\n상환액)",
+                type: "소득공제" as const,
+                amount: totalDeduction,
+                limit: maxLimit,
+                status: getStatus(totalDeduction / maxLimit),
+                thresholdInfo: infoLines.join("\n"),
+            };
+        })(),
+        (() => {
+            // 월세 세액공제 - 급여에 따라 공제율 결정
+            const rentAmount = deductions.housingRent || 0;
+            const rentRate = salary <= 55000000 ? 0.17 : 0.15;
+            const rentRatePercent = salary <= 55000000 ? "17%" : "15%";
+            const limitedRent = Math.min(rentAmount, 10000000);
+            const rentCredit = Math.round(limitedRent * rentRate);
+
+            // thresholdInfo 생성 - 기부금처럼 세부 계산식 표시
+            const infoLines: string[] = [];
+            infoLines.push(`총급여: ${salary.toLocaleString("ko-KR")}원`);
+            infoLines.push(`→ ${salary <= 55000000 ? "5,500만원 이하" : "5,500만원 초과"}`);
+            infoLines.push(`──────────────`);
+            infoLines.push(`지출: ${rentAmount.toLocaleString("ko-KR")}원`);
+            if (rentAmount > 10000000) {
+                infoLines.push(`한도: ${(10000000).toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${limitedRent.toLocaleString("ko-KR")} × ${rentRatePercent}`);
+            infoLines.push(`= ${rentCredit.toLocaleString("ko-KR")}원`);
+
+            return {
+                id: "2-3",
+                category: "월세 세액공제",
+                type: "세액공제" as const,
+                amount: rentCredit,
+                limit: 10000000,
+                status: getStatus(rentAmount / 10000000),
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: 10000000 * rentRate,
+                rentLimitInfo: {
+                    salary: salary,
+                    limit: 10000000,
+                    rate: rentRate,
+                    ratePercent: rentRatePercent,
+                    isLowIncome: salary <= 55000000,
+                },
+            };
+        })(),
         (() => {
             // 의료비 계산 및 계산식 생성
             const infertility = deductions.medicalInfertility || 0;  // 난임시술비: 30%
@@ -456,6 +616,12 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
 
             // thresholdInfo 생성 - 각 카테고리별 계산식 표시
             const infoLines: string[] = [];
+
+            // 3% 문턱 정보 추가 (신용카드와 동일한 형식)
+            infoLines.push(`3% 문턱: ${threshold.toLocaleString("ko-KR")}원`);
+            infoLines.push(`지출: ${totalMedical.toLocaleString("ko-KR")}원`);
+            infoLines.push(`초과분: ${Math.max(0, totalMedical - threshold).toLocaleString("ko-KR")}원`);
+            infoLines.push(`──────────────`);
 
             // 난임시술비
             infoLines.push(`난임시술비: ${infertility.toLocaleString("ko-KR")}원`);
@@ -866,12 +1032,17 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
             const birthAdoption = adminData.family?.birthAdoption || "none";
 
             // 자녀 세액공제 (만 8세 이상)
-            // 첫째, 둘째: 각 15만원
-            // 셋째 이상: 각 30만원
+            // 1명: 25만원
+            // 2명: 55만원
+            // 3명 이상: 55만원 + (추가 인원 × 40만원)
             let childCredit = 0;
-            if (childrenOver8 >= 1) childCredit += 150000; // 첫째
-            if (childrenOver8 >= 2) childCredit += 150000; // 둘째
-            if (childrenOver8 >= 3) childCredit += (childrenOver8 - 2) * 300000; // 셋째 이상
+            if (childrenOver8 === 1) {
+                childCredit = 250000; // 1명
+            } else if (childrenOver8 === 2) {
+                childCredit = 550000; // 2명
+            } else if (childrenOver8 >= 3) {
+                childCredit = 550000 + (childrenOver8 - 2) * 400000; // 3명 이상
+            }
 
             // 출생·입양 공제
             let birthAdoptionCredit = 0;
@@ -886,10 +1057,16 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
                     birthAdoptionName = "둘째";
                     break;
                 case "third1":
-                case "third2":
-                case "third3":
                     birthAdoptionCredit = 700000;
-                    birthAdoptionName = "셋째 이상";
+                    birthAdoptionName = "셋째 이상 1명";
+                    break;
+                case "third2":
+                    birthAdoptionCredit = 1400000;
+                    birthAdoptionName = "셋째 이상 2명";
+                    break;
+                case "third3":
+                    birthAdoptionCredit = 2100000;
+                    birthAdoptionName = "셋째 이상 3명";
                     break;
             }
 
@@ -901,14 +1078,15 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
             // 자녀 세액공제 계산식
             infoLines.push(`자녀 세액공제 (만 8세 이상 ${childrenOver8}명)`);
             if (childrenOver8 > 0) {
-                const parts: string[] = [];
-                if (childrenOver8 >= 1) parts.push("첫째: 150,000원");
-                if (childrenOver8 >= 2) parts.push("둘째: 150,000원");
-                if (childrenOver8 >= 3) {
+                if (childrenOver8 === 1) {
+                    infoLines.push(`└ 1명: 250,000원`);
+                } else if (childrenOver8 === 2) {
+                    infoLines.push(`└ 2명: 550,000원`);
+                } else if (childrenOver8 >= 3) {
                     const thirdPlus = childrenOver8 - 2;
-                    parts.push(`셋째 이상 ${thirdPlus}명: ${(thirdPlus * 300000).toLocaleString("ko-KR")}원`);
+                    infoLines.push(`└ 2명: 550,000원`);
+                    infoLines.push(`└ 추가 ${thirdPlus}명: ${(thirdPlus * 400000).toLocaleString("ko-KR")}원`);
                 }
-                infoLines.push(`└ ${parts.join(" + ")}`);
                 infoLines.push(`= ${childCredit.toLocaleString("ko-KR")}원`);
             } else {
                 infoLines.push(`└ 0원`);
@@ -935,9 +1113,9 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
                 thresholdInfo: infoLines.join("\n"),
                 maxBenefit: 0, // 한도 없음
                 childLimits: {
-                    first: 150000,
-                    second: 150000,
-                    thirdPlus: 300000,
+                    first: 250000,
+                    second: 550000,
+                    thirdPlus: 400000,
                     birthFirst: 300000,
                     birthSecond: 500000,
                     birthThirdPlus: 700000,

@@ -523,8 +523,8 @@ export default function DashboardPage() {
                                     "4대보험": Building,
                                     "신용카드 등 사용금액": CreditCard,
                                     "주택자금(청약저축)": Home,
-                                    "주택자금(임차차입금)": Home,
-                                    "주택자금(장기주택저당차입금)": Home,
+                                    "주택자금(청약저축+임차차입금)": Home,
+                                    "주택자금(장기주택저당차입금이자\n상환액)": Home,
                                     "월세 세액공제": Home,
                                     "의료비": Heart,
                                     "교육비": GraduationCap,
@@ -547,7 +547,7 @@ export default function DashboardPage() {
                                                 <div className="w-10 h-10 border-2 border-black bg-neo-yellow flex items-center justify-center">
                                                     <Icon size={20} />
                                                 </div>
-                                                <span className="font-bold">{item.category}</span>
+                                                <span className="font-bold whitespace-pre-line">{item.category}</span>
                                             </div>
                                         </td>
                                         <td className="text-center py-4 px-2 sm:px-4 hidden sm:table-cell">
@@ -579,14 +579,14 @@ export default function DashboardPage() {
                                             ) : item.category === "자녀" && item.childLimits ? (
                                                 <span className="text-xs">
                                                     자녀 세액공제:{"\n"}
-                                                    첫째: {formatNumber(item.childLimits.first)}원{"\n"}
-                                                    둘째: {formatNumber(item.childLimits.second)}원{"\n"}
-                                                    셋째 이상: 1인당 {formatNumber(item.childLimits.thirdPlus)}원{"\n"}
+                                                    1명: {formatNumber(item.childLimits.first)}원{"\n"}
+                                                    2명: {formatNumber(item.childLimits.second)}원{"\n"}
+                                                    3명 이상: {formatNumber(item.childLimits.thirdPlus)}원{"\n"}
                                                     ───{"\n"}
                                                     출생·입양 공제:{"\n"}
                                                     첫째: {formatNumber(item.childLimits.birthFirst)}원{"\n"}
                                                     둘째: {formatNumber(item.childLimits.birthSecond)}원{"\n"}
-                                                    셋째 이상: {formatNumber(item.childLimits.birthThirdPlus)}원
+                                                    셋째 이상: 1인당 {formatNumber(item.childLimits.birthThirdPlus)}원
                                                 </span>
                                             ) : (
                                                 <>{formatNumber(item.limit)}원</>

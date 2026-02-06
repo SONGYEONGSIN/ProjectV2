@@ -341,11 +341,17 @@ export default function AdminPage() {
                 educationUniv1: getSpendingAmount("교육비(대학)-자녀1"),
                 educationUniv2: getSpendingAmount("교육비(대학)-자녀2"),
                 educationUniv3: getSpendingAmount("교육비(대학)-자녀3"),
-                housing: getSpendingAmount("주택자금(청약저축)"),  // 레거시 호환
-                housingSubscription: getSpendingAmount("주택자금(청약저축)"),
+                housing: getSpendingAmount("주택자금(청약저축)") + getSpendingAmount("주택자금(청약저축) - 세대주") + getSpendingAmount("주택자금(청약저축) - 배우자"),  // 레거시 호환
+                housingSubscription: getSpendingAmount("주택자금(청약저축)") + getSpendingAmount("주택자금(청약저축) - 세대주") + getSpendingAmount("주택자금(청약저축) - 배우자"),
+                housingSubscriptionHead: getSpendingAmount("주택자금(청약저축) - 세대주"),
+                housingSubscriptionSpouse: getSpendingAmount("주택자금(청약저축) - 배우자"),
                 housingRent: getSpendingAmount("주택자금(월세)"),
-                housingLoan: getSpendingAmount("주택자금(임차차입금)"),
-                housingMortgage: getSpendingAmount("주택자금(장기주택저당차입금)"),
+                housingLoan: getSpendingAmount("주택자금(임차차입금원리금상환액)"),
+                housingMortgage: getSpendingAmount("주택자금(장기주택)"),  // 레거시 호환
+                housingMortgage15Fixed: getSpendingAmount("주택자금(장기주택)(15년이상 고정금리+비거치식)"),
+                housingMortgage15Either: getSpendingAmount("주택자금(장기주택)(15년이상 고정금리 or 비거치식)"),
+                housingMortgage15Other: getSpendingAmount("주택자금(장기주택)(15년이상 기타)"),
+                housingMortgage10Either: getSpendingAmount("주택자금(장기주택)(10년이상 고정금리 or 비거치식)"),
                 pension: getSpendingAmount("연금저축") + getSpendingAmount("퇴직연금(IRP)"),  // 레거시 호환
                 pensionSavings: getSpendingAmount("연금저축"),
                 pensionIRP: getSpendingAmount("퇴직연금(IRP)"),
@@ -1428,10 +1434,24 @@ export default function AdminPage() {
                                     <option value="기부금(일반기부금(종교 외))">🎗️ 기부금(일반기부금(종교 외))</option>
                                     <option value="연금저축">💰 연금저축</option>
                                     <option value="퇴직연금(IRP)">🏦 퇴직연금(IRP)</option>
-                                    <option value="주택자금(청약저축)">🏠 주택자금(청약저축)</option>
+                                    <option
+                                        value="주택자금(청약저축) - 세대주"
+                                        disabled={Object.values(monthlySalary).reduce((sum, m) => sum + parseInt(m.totalSalary.replace(/[^0-9]/g, "") || "0"), 0) > 70000000}
+                                    >
+                                        🏠 주택자금(청약저축) - 세대주 {Object.values(monthlySalary).reduce((sum, m) => sum + parseInt(m.totalSalary.replace(/[^0-9]/g, "") || "0"), 0) > 70000000 ? "(총급여 7천만원 이하만)" : ""}
+                                    </option>
+                                    <option
+                                        value="주택자금(청약저축) - 배우자"
+                                        disabled={Object.values(monthlySalary).reduce((sum, m) => sum + parseInt(m.totalSalary.replace(/[^0-9]/g, "") || "0"), 0) > 70000000}
+                                    >
+                                        🏠 주택자금(청약저축) - 배우자 {Object.values(monthlySalary).reduce((sum, m) => sum + parseInt(m.totalSalary.replace(/[^0-9]/g, "") || "0"), 0) > 70000000 ? "(총급여 7천만원 이하만)" : ""}
+                                    </option>
                                     <option value="주택자금(월세)">🏠 주택자금(월세)</option>
-                                    <option value="주택자금(임차차입금)">🏠 주택자금(임차차입금)</option>
-                                    <option value="주택자금(장기주택저당차입금)">🏠 주택자금(장기주택저당차입금)</option>
+                                    <option value="주택자금(임차차입금원리금상환액)">🏠 주택자금(임차차입금원리금상환액)</option>
+                                    <option value="주택자금(장기주택)(15년이상 고정금리+비거치식)">🏠 주택자금(장기주택)(15년이상 고정금리+비거치식)</option>
+                                    <option value="주택자금(장기주택)(15년이상 고정금리 or 비거치식)">🏠 주택자금(장기주택)(15년이상 고정금리 or 비거치식)</option>
+                                    <option value="주택자금(장기주택)(15년이상 기타)">🏠 주택자금(장기주택)(15년이상 기타)</option>
+                                    <option value="주택자금(장기주택)(10년이상 고정금리 or 비거치식)">🏠 주택자금(장기주택)(10년이상 고정금리 or 비거치식)</option>
                                 </select>
                             </div>
                             <div>

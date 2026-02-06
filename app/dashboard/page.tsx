@@ -5,7 +5,7 @@ import Link from "next/link";
 import { TrendingUp, Sparkles, Bell, Target, ChevronUp, ChevronDown, AlertCircle, CheckCircle2, Lightbulb, PiggyBank, CreditCard, Home, Heart, GraduationCap, Gift, Building, Loader2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { loadTaxData, loadAdminData, generateDeductionAnalysis, DeductionAnalysis } from "@/lib/tax-store";
-import { generateRecommendations, getDefaultRecommendations, calculateTotalPotentialSaving, AIRecommendation } from "@/lib/ai-recommendation";
+import { generateRecommendations, getDefaultRecommendations, calculateTotalPotentialSaving, AIRecommendation, convertAdminDataToTaxData, generateRecommendationsFromAnalysis } from "@/lib/ai-recommendation";
 import { calculateTax, convertAdminToTaxInputs } from "@/lib/tax-calculator";
 
 interface NewsArticle {
@@ -216,7 +216,7 @@ const MOCK_NEWS_ARTICLES = [
 ];
 
 function formatNumber(num: number): string {
-    return num.toLocaleString("ko-KR");
+    return Math.round(num).toLocaleString("ko-KR");
 }
 
 function getUtilizationColor(rate: number): string {
@@ -226,8 +226,13 @@ function getUtilizationColor(rate: number): string {
     return "bg-red-400";
 }
 
-function getStatusBadge(status: DeductionItem["status"]) {
-    switch (status) {
+function getStatusBadge(status: DeductionItem["status"], utilizationRate?: number) {
+    // 활용률 기준으로 상태 결정: 95% 이상=최적, 70% 이상=양호, 40% 이상=개선, 40% 미만=미달
+    const effectiveStatus = utilizationRate !== undefined
+        ? (utilizationRate >= 95 ? "optimal" : utilizationRate >= 70 ? "good" : utilizationRate >= 40 ? "warning" : "critical")
+        : status;
+
+    switch (effectiveStatus) {
         case "optimal":
             return <span className="inline-block px-2 py-1 text-xs font-bold bg-neo-cyan border-2 border-black whitespace-nowrap">최적</span>;
         case "good":
@@ -273,24 +278,19 @@ export default function DashboardPage() {
     const [hasAdminData, setHasAdminData] = useState(false);
     const [currentAmount, setCurrentAmount] = useState(0);
     const [totalPrepaidTax, setTotalPrepaidTax] = useState(0); // 기납부세액 총액 (목표 상한선)
+    const [totalSalary, setTotalSalary] = useState(0); // 총급여
+
+    // AI 개인화 조언 상태
+    const [aiAdvice, setAiAdvice] = useState<string>("");
+    const [aiAdviceLoading, setAiAdviceLoading] = useState(false);
+    const [aiAdviceError, setAiAdviceError] = useState<string>("");
+    const [showAiModal, setShowAiModal] = useState(false);
+
     const goalProgress = Math.min(100, Math.round((currentAmount / goalAmount) * 100));
 
     const totalPotentialSaving = calculateTotalPotentialSaving(aiRecommendations);
 
-    // AI 추천 생성
-    useEffect(() => {
-        const taxData = loadTaxData();
-        if (taxData && taxData.salary > 0) {
-            const recommendations = generateRecommendations(taxData);
-            setAiRecommendations(recommendations);
-            setHasUserData(true);
-        } else {
-            setAiRecommendations(getDefaultRecommendations());
-            setHasUserData(false);
-        }
-    }, []);
-
-    // Admin 데이터로 공제 분석 및 환급액 계산
+    // Admin 데이터로 공제 분석, 환급액 계산, AI 추천 생성 (통합)
     useEffect(() => {
         // 2026년 우선, 없으면 2025년 데이터 사용
         let adminData = loadAdminData(2026);
@@ -317,6 +317,18 @@ export default function DashboardPage() {
             if (withheldTax > 0) {
                 setGoalAmount(withheldTax);
             }
+
+            // AI 추천 생성 - 공제 항목별 상세 분석 결과 기반으로 생성
+            const calculatedSalary = Object.values(adminData.salary.monthly as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
+            setTotalSalary(calculatedSalary);
+            const recommendations = generateRecommendationsFromAnalysis(analysis, calculatedSalary);
+            if (recommendations.length > 0) {
+                setAiRecommendations(recommendations);
+                setHasUserData(true);
+            } else {
+                setAiRecommendations(getDefaultRecommendations());
+                setHasUserData(false);
+            }
         } else {
             // 데이터 없으면 기본 Mock 사용
             setDeductionItems(MOCK_DEDUCTIONS.map(d => ({
@@ -329,6 +341,17 @@ export default function DashboardPage() {
             })));
             setHasAdminData(false);
             setCurrentAmount(0);
+
+            // 기존 TaxData 확인 (Calculator 데이터가 있으면 사용)
+            const taxData = loadTaxData();
+            if (taxData && taxData.salary > 0) {
+                const recommendations = generateRecommendations(taxData);
+                setAiRecommendations(recommendations);
+                setHasUserData(true);
+            } else {
+                setAiRecommendations(getDefaultRecommendations());
+                setHasUserData(false);
+            }
         }
     }, []);
 
@@ -353,6 +376,47 @@ export default function DashboardPage() {
         }
         fetchNews();
     }, []);
+
+    // AI 개인화 조언 요청 함수
+    const fetchAiAdvice = async () => {
+        if (!hasAdminData || deductionItems.length === 0) return;
+
+        setShowAiModal(true);  // 모달 열기
+        setAiAdviceLoading(true);
+        setAiAdviceError("");
+
+        try {
+            const response = await fetch("/api/ai-advice", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    salary: totalSalary,
+                    deductionItems: deductionItems.map(item => ({
+                        category: item.category,
+                        type: item.type,
+                        amount: item.amount,
+                        limit: item.limit,
+                        status: item.status
+                    })),
+                    currentRefund: currentAmount,
+                    prepaidTax: totalPrepaidTax
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.advice) {
+                setAiAdvice(data.advice);
+            } else {
+                setAiAdviceError(data.error || "AI 조언 생성에 실패했습니다.");
+            }
+        } catch (error) {
+            console.error("AI Advice Error:", error);
+            setAiAdviceError("AI 조언 요청 중 오류가 발생했습니다.");
+        } finally {
+            setAiAdviceLoading(false);
+        }
+    };
 
     return (
         <div className="space-y-8 animate-fade-in">
@@ -522,10 +586,9 @@ export default function DashboardPage() {
                                     "기본공제 (인적공제)": Users,
                                     "4대보험": Building,
                                     "신용카드 등 사용금액": CreditCard,
-                                    "주택자금(청약저축)": Home,
-                                    "주택자금(청약저축+임차차입금)": Home,
-                                    "주택자금(장기주택저당차입금이자\n상환액)": Home,
-                                    "월세 세액공제": Home,
+                                    "주택자금\n(청약저축+임차차입금)": Home,
+                                    "주택자금\n(장기주택저당차입금이자상환)": Home,
+                                    "월세": Home,
                                     "의료비": Heart,
                                     "교육비": GraduationCap,
                                     "기부금": Gift,
@@ -535,7 +598,9 @@ export default function DashboardPage() {
                                 };
                                 const Icon = iconMap[item.category] || CreditCard;
                                 const maxValue = item.maxBenefit || item.limit;
-                                const utilizationRate = maxValue > 0 ? Math.min(100, Math.round((item.amount / maxValue) * 100)) : 0;
+                                const utilizationRate = maxValue > 0
+                                    ? Math.min(100, Math.round((item.amount / maxValue) * 100))
+                                    : (item.amount > 0 ? 100 : 0); // 한도 없는 항목은 공제액이 있으면 100%
                                 return (
                                     <tr
                                         key={item.id}
@@ -604,7 +669,7 @@ export default function DashboardPage() {
                                             </div>
                                         </td>
                                         <td className="text-center py-3 px-1 sm:px-4">
-                                            {getStatusBadge(item.status)}
+                                            {getStatusBadge(item.status, utilizationRate)}
                                         </td>
                                     </tr>
                                 );
@@ -620,7 +685,7 @@ export default function DashboardPage() {
                             <CheckCircle2 size={24} className="text-neo-cyan flex-shrink-0" />
                             <div>
                                 <p className="font-bold">전체 공제 활용률</p>
-                                <p className="text-sm text-gray-600">7개 항목 중 2개 최적화 완료</p>
+                                <p className="text-sm text-gray-600">{deductionItems.length}개 항목 중 {deductionItems.filter(d => d.status === "optimal").length}개 최적화 완료</p>
                             </div>
                         </div>
 
@@ -635,18 +700,21 @@ export default function DashboardPage() {
                                 <div className="flex justify-between items-end">
                                     <div>
                                         <p className="text-xs text-gray-700">현재 공제액</p>
-                                        <p className="text-xl sm:text-2xl font-black">{formatNumber(MOCK_DEDUCTIONS.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.amount, 0))}원</p>
+                                        <p className="text-xl sm:text-2xl font-black">{formatNumber(deductionItems.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.amount, 0))}원</p>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-xs text-gray-700">최대 한도</p>
-                                        <p className="text-lg font-bold text-gray-800">{formatNumber(MOCK_DEDUCTIONS.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.limit, 0))}원</p>
+                                        <p className="text-lg font-bold text-gray-800">{formatNumber(deductionItems.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.limit, 0))}원</p>
                                     </div>
                                 </div>
                                 <div className="mt-2 w-full bg-white h-2 border border-black">
                                     <div
                                         className="h-full bg-neo-black"
                                         style={{
-                                            width: `${Math.round(MOCK_DEDUCTIONS.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.amount, 0) / MOCK_DEDUCTIONS.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.limit, 0) * 100)}%`
+                                            width: `${(() => {
+                                                const total = deductionItems.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.limit, 0);
+                                                return total > 0 ? Math.round(deductionItems.filter(d => d.type === "소득공제").reduce((sum, d) => sum + d.amount, 0) / total * 100) : 0;
+                                            })()}%`
                                         }}
                                     ></div>
                                 </div>
@@ -661,18 +729,21 @@ export default function DashboardPage() {
                                 <div className="flex justify-between items-end">
                                     <div>
                                         <p className="text-xs text-gray-800">현재 공제액</p>
-                                        <p className="text-xl sm:text-2xl font-black text-white">{formatNumber(MOCK_DEDUCTIONS.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.amount, 0))}원</p>
+                                        <p className="text-xl sm:text-2xl font-black text-white">{formatNumber(deductionItems.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.amount, 0))}원</p>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-xs text-gray-800">최대 한도</p>
-                                        <p className="text-lg font-bold text-white">{formatNumber(MOCK_DEDUCTIONS.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.limit, 0))}원</p>
+                                        <p className="text-lg font-bold text-white">{formatNumber(deductionItems.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.limit, 0))}원</p>
                                     </div>
                                 </div>
                                 <div className="mt-2 w-full bg-white h-2 border border-black">
                                     <div
                                         className="h-full bg-neo-black"
                                         style={{
-                                            width: `${Math.round(MOCK_DEDUCTIONS.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.amount, 0) / MOCK_DEDUCTIONS.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.limit, 0) * 100)}%`
+                                            width: `${(() => {
+                                                const total = deductionItems.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.limit, 0);
+                                                return total > 0 ? Math.round(deductionItems.filter(d => d.type === "세액공제").reduce((sum, d) => sum + d.amount, 0) / total * 100) : 0;
+                                            })()}%`
                                         }}
                                     ></div>
                                 </div>
@@ -683,9 +754,9 @@ export default function DashboardPage() {
                         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-3 border-t-2 border-gray-300">
                             <div className="text-center sm:text-left">
                                 <span className="text-sm font-medium text-gray-600">전체 합계: </span>
-                                <span className="font-black text-lg">{formatNumber(MOCK_DEDUCTIONS.reduce((sum, d) => sum + d.amount, 0))}원</span>
+                                <span className="font-black text-lg">{formatNumber(deductionItems.reduce((sum, d) => sum + d.amount, 0))}원</span>
                                 <span className="text-gray-500"> / </span>
-                                <span className="font-bold text-gray-600">{formatNumber(MOCK_DEDUCTIONS.reduce((sum, d) => sum + d.limit, 0))}원</span>
+                                <span className="font-bold text-gray-600">{formatNumber(deductionItems.reduce((sum, d) => sum + d.limit, 0))}원</span>
                             </div>
                             <div className="flex items-center gap-2 text-sm">
                                 <span className="w-3 h-3 bg-neo-cyan border border-black"></span>
@@ -701,13 +772,28 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* AI Recommendations */}
                 <div className="neo-card bg-white">
-                    <h3 className="text-xl font-black mb-6 flex items-center gap-2 border-b-2 border-black pb-2">
-                        <Lightbulb size={20} className="text-neo-yellow" />
-                        AI 절세 추천
-                        <span className="ml-auto neo-badge bg-neo-orange text-white text-sm">
-                            +{formatNumber(totalPotentialSaving)}원 가능
+                    <div className="flex items-center justify-between mb-6 border-b-2 border-black pb-2">
+                        <h3 className="text-xl font-black flex items-center gap-2">
+                            <Lightbulb size={20} className="text-neo-yellow" />
+                            AI 절세 추천
+                            {hasAdminData && (
+                                <button
+                                    onClick={fetchAiAdvice}
+                                    disabled={aiAdviceLoading}
+                                    className={`ml-2 px-3 py-1.5 font-bold border-2 border-black text-xs transition-all flex items-center gap-1 ${aiAdviceLoading
+                                        ? "bg-gray-300 cursor-not-allowed"
+                                        : "bg-gradient-to-r from-neo-cyan to-cyan-400 hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000]"
+                                        }`}
+                                >
+                                    <Sparkles size={14} />
+                                    {aiAdviceLoading ? "분석 중..." : "제미니 분석 요청"}
+                                </button>
+                            )}
+                        </h3>
+                        <span className="neo-badge bg-neo-orange text-white text-sm">
+                            -{formatNumber(totalPotentialSaving)}원 가능
                         </span>
-                    </h3>
+                    </div>
                     <div className="space-y-4">
                         {aiRecommendations.length === 0 ? (
                             <div className="text-center py-8 text-gray-500">
@@ -724,7 +810,7 @@ export default function DashboardPage() {
                                         <Badge type={rec.priority} />
                                         {rec.potentialSaving > 0 && (
                                             <span className="text-lg font-black text-neo-cyan">
-                                                +{formatNumber(rec.potentialSaving)}원
+                                                -{formatNumber(rec.potentialSaving)}원
                                             </span>
                                         )}
                                     </div>
@@ -749,7 +835,6 @@ export default function DashboardPage() {
                         )}
                     </div>
                 </div>
-
                 {/* 연말정산 뉴스 */}
                 <div className="neo-card bg-neo-black text-white">
                     <div className="flex items-center justify-between mb-4 border-b-2 border-white pb-2">
@@ -866,12 +951,95 @@ export default function DashboardPage() {
                         </div>
                     </div>
                     <Link href="/calculator">
-                        <button className="px-8 py-4 bg-neo-black text-white font-black text-lg border-2 border-black shadow-[4px_4px_0px_0px_#000] hover:shadow-[6px_6px_0px_0px_#000] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
+                        <button className="px-8 py-4 bg-neo-black text-white font-black text-lg border-2 border-black shadow-[4px_4px_0px_0px_#000] hover:shadow-[6px_6px_0px_0px_#000] hover:-translate-x-0.5 hover:-translate-y-0.5 active:shadow-none active:translate-x-1 active:translate-y-1 transition-all">
                             절세 시뮬레이션 시작
                         </button>
                     </Link>
                 </div>
             </div>
-        </div>
+
+            {/* Gemini AI 분석 모달 */}
+            {showAiModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    {/* 배경 오버레이 */}
+                    <div
+                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        onClick={() => !aiAdviceLoading && setShowAiModal(false)}
+                    />
+
+                    {/* 모달 컨텐츠 */}
+                    <div className="relative w-full max-w-2xl max-h-[80vh] bg-white border-4 border-black shadow-[8px_8px_0px_0px_#000] overflow-hidden flex flex-col m-auto">
+                        {/* 모달 헤더 */}
+                        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-neo-cyan to-cyan-400 border-b-2 border-black">
+                            <h3 className="text-xl font-black flex items-center gap-2">
+                                <Sparkles size={24} />
+                                🤖 Gemini AI 맞춤 절세 분석
+                            </h3>
+                            {!aiAdviceLoading && (
+                                <button
+                                    onClick={() => setShowAiModal(false)}
+                                    className="w-10 h-10 flex items-center justify-center font-black text-2xl border-2 border-black bg-white hover:bg-gray-100 transition-colors"
+                                >
+                                    ×
+                                </button>
+                            )}
+                        </div>
+
+                        {/* 모달 바디 */}
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {aiAdviceLoading ? (
+                                <div className="flex flex-col items-center justify-center py-16">
+                                    <Loader2 size={48} className="text-neo-cyan animate-spin mb-4" />
+                                    <p className="font-bold text-lg">Gemini AI가 분석 중입니다...</p>
+                                    <p className="text-sm text-gray-600 mt-1">잠시만 기다려주세요</p>
+                                </div>
+                            ) : aiAdviceError ? (
+                                <div className="p-4 bg-red-100 border-2 border-red-500">
+                                    <p className="text-red-700 font-bold flex items-center gap-2">
+                                        <AlertCircle size={20} />
+                                        {aiAdviceError}
+                                    </p>
+                                    <button
+                                        onClick={fetchAiAdvice}
+                                        className="mt-3 px-4 py-2 font-bold border-2 border-black bg-white hover:bg-gray-100"
+                                    >
+                                        다시 시도
+                                    </button>
+                                </div>
+                            ) : aiAdvice ? (
+                                <div
+                                    className="whitespace-pre-wrap text-neo-black leading-relaxed"
+                                    dangerouslySetInnerHTML={{
+                                        __html: aiAdvice
+                                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                            .replace(/###\s?(.*)/g, '<h4 class="font-black text-lg mt-4 mb-2 text-neo-cyan">$1</h4>')
+                                            .replace(/##\s?(.*)/g, '<h3 class="font-black text-xl mt-4 mb-2 border-b-2 border-black pb-1">$1</h3>')
+                                            .replace(/\n/g, '<br/>')
+                                    }}
+                                />
+                            ) : null}
+                        </div>
+
+                        {/* 모달 푸터 */}
+                        {!aiAdviceLoading && aiAdvice && (
+                            <div className="p-4 bg-gray-100 border-t-2 border-black flex justify-end gap-2">
+                                <button
+                                    onClick={fetchAiAdvice}
+                                    className="px-4 py-2 font-bold border-2 border-black bg-white hover:bg-gray-50"
+                                >
+                                    다시 분석
+                                </button>
+                                <button
+                                    onClick={() => setShowAiModal(false)}
+                                    className="px-4 py-2 font-bold border-2 border-black bg-neo-yellow hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                                >
+                                    닫기
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div >
     );
 }

@@ -302,11 +302,11 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
         const cashExcess = spending.cash - cashUsed;
         cardDeduction += cashExcess * 0.30;
 
-        // 4. 대중교통 (80%)
+        // 4. 대중교통 (40%)
         const transportUsed = Math.min(spending.publicTransport, remaining);
         remaining -= transportUsed;
         const transportExcess = spending.publicTransport - transportUsed;
-        cardDeduction += transportExcess * 0.80;
+        cardDeduction += transportExcess * 0.40;
 
         // 5. 전통시장 (40%)
         const marketUsed = Math.min(spending.traditionalMarket, remaining);
@@ -447,32 +447,36 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
             // 공제한도 400만원 적용 (최종 공제액 기준)
             const finalDeduction = Math.min(calculatedDeduction, 4000000);
 
-            // thresholdInfo 생성
+            // thresholdInfo 생성 - 연금저축/IRP와 동일한 형식
             const infoLines: string[] = [];
-            infoLines.push("【 청약저축 + 임차차입금 합산 】");
-            if (headAmount > 0 || spouseAmount > 0) {
-                infoLines.push(`청약저축:`);
-                if (headAmount > 0) infoLines.push(`  세대주: ${headAmount.toLocaleString("ko-KR")}원`);
-                if (spouseAmount > 0) infoLines.push(`  배우자: ${spouseAmount.toLocaleString("ko-KR")}원`);
-                if (subscriptionTotal > 3000000) {
-                    infoLines.push(`  (납입한도 300만원 적용)`);
-                }
+
+            // 청약저축 계산식 (항상 표시)
+            if (subscriptionTotal > 3000000) {
+                infoLines.push(`청약저축: ${subscriptionTotal.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 한도: ${limitedSubscription.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`청약저축: ${subscriptionTotal.toLocaleString("ko-KR")}원`);
             }
-            if (loanAmount > 0) {
-                infoLines.push(`임차차입금: ${loanAmount.toLocaleString("ko-KR")}원`);
-            }
+            const subscriptionDeduction = Math.round(limitedSubscription * 0.4);
+            infoLines.push(`└ ${limitedSubscription.toLocaleString("ko-KR")} × 40%\n= ${subscriptionDeduction.toLocaleString("ko-KR")}원`);
+
+            // 임차차입금 계산식 (항상 표시)
+            infoLines.push(`임차차입금: ${loanAmount.toLocaleString("ko-KR")}원`);
+            const loanDeduction = Math.round(loanAmount * 0.4);
+            infoLines.push(`└ ${loanAmount.toLocaleString("ko-KR")} × 40%\n= ${loanDeduction.toLocaleString("ko-KR")}원`);
+
+            // 합계 표시
             infoLines.push(`──────────────`);
-            infoLines.push(`합산: ${combinedTotal.toLocaleString("ko-KR")}원`);
-            infoLines.push(`└ ${combinedTotal.toLocaleString("ko-KR")} × 40%`);
-            infoLines.push(`= ${calculatedDeduction.toLocaleString("ko-KR")}원`);
             if (calculatedDeduction > 4000000) {
-                infoLines.push(`(공제한도 400만원 적용)`);
-                infoLines.push(`→ ${finalDeduction.toLocaleString("ko-KR")}원`);
+                infoLines.push(`합계: ${calculatedDeduction.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 공제한도: ${finalDeduction.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`합계: ${finalDeduction.toLocaleString("ko-KR")}원`);
             }
 
             return {
                 id: "2",
-                category: "주택자금(청약저축+임차차입금)",
+                category: "주택자금\n(청약저축+임차차입금)",
                 type: "소득공제" as const,
                 amount: finalDeduction,
                 limit: 4000000,
@@ -481,62 +485,94 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
             };
         })(),
         (() => {
-            // 장기주택저당차입금이자상환액 - 옵션별 한도 적용
-            // 15년이상 고정금리+비거치식: 1,800만원
-            // 15년이상 고정금리 or 비거치식: 1,500만원
-            // 15년이상 기타: 500만원
-            // 10년이상 고정금리 or 비거치식: 300만원
+            // 장기주택저당차입금이자상환액 - 옵션별 한도 적용 (이자 전액 공제)
+            // 15년이상 고정금리+비거치식: 2,000만원
+            // 15년이상 고정금리 or 비거치식: 1,800만원
+            // 15년이상 기타: 800만원
+            // 10년이상 고정금리 or 비거치식: 600만원
 
             const mortgage15Fixed = deductions.housingMortgage15Fixed || 0;
             const mortgage15Either = deductions.housingMortgage15Either || 0;
             const mortgage15Other = deductions.housingMortgage15Other || 0;
             const mortgage10Either = deductions.housingMortgage10Either || 0;
 
-            // 레거시 호환
-            const mortgageLegacy = deductions.housingMortgage || 0;
+            // 레거시 호환: 새 필드들이 모두 0일 때만 사용
+            const hasNewFields = mortgage15Fixed > 0 || mortgage15Either > 0 || mortgage15Other > 0 || mortgage10Either > 0;
+            const mortgageLegacy = hasNewFields ? 0 : (deductions.housingMortgage || 0);
 
-            // 옵션별 한도 적용
-            const limited15Fixed = Math.min(mortgage15Fixed, 18000000);
-            const limited15Either = Math.min(mortgage15Either, 15000000);
-            const limited15Other = Math.min(mortgage15Other, 5000000);
-            const limited10Either = Math.min(mortgage10Either, 3000000);
+            // 옵션별 한도 적용 (2026년 기준)
+            const LIMIT_15_FIXED = 20000000;   // 2,000만원
+            const LIMIT_15_EITHER = 18000000;  // 1,800만원
+            const LIMIT_15_OTHER = 8000000;    // 800만원
+            const LIMIT_10_EITHER = 6000000;   // 600만원
+
+            const limited15Fixed = Math.min(mortgage15Fixed, LIMIT_15_FIXED);
+            const limited15Either = Math.min(mortgage15Either, LIMIT_15_EITHER);
+            const limited15Other = Math.min(mortgage15Other, LIMIT_15_OTHER);
+            const limited10Either = Math.min(mortgage10Either, LIMIT_10_EITHER);
 
             // 총 공제액 (이자 전액 공제이므로 한도 적용 금액 = 공제액)
             const totalDeduction = limited15Fixed + limited15Either + limited15Other + limited10Either + mortgageLegacy;
-            const maxLimit = 18000000;  // 최대 한도 표시용
+            const maxLimit = LIMIT_15_FIXED;  // 최대 한도 표시용
 
-            // thresholdInfo 생성
+            // thresholdInfo 생성 - 청약저축+임차차입금과 동일한 형식
             const infoLines: string[] = [];
-            infoLines.push("【 장기주택저당차입금 이자상환액 】");
+
+            // 15년↑ 고정+비거치 (한도 2,000만원)
             if (mortgage15Fixed > 0) {
-                infoLines.push(`15년↑ 고정+비거치: ${mortgage15Fixed.toLocaleString("ko-KR")}원`);
-                if (mortgage15Fixed > 18000000) infoLines.push(`  (한도 1,800만원 적용)`);
+                if (mortgage15Fixed > LIMIT_15_FIXED) {
+                    infoLines.push(`15년↑ 고정+비거치: ${mortgage15Fixed.toLocaleString("ko-KR")}원`);
+                    infoLines.push(`→ 한도: ${limited15Fixed.toLocaleString("ko-KR")}원`);
+                } else {
+                    infoLines.push(`15년↑ 고정+비거치: ${mortgage15Fixed.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`└ ${limited15Fixed.toLocaleString("ko-KR")} × 100%\n= ${limited15Fixed.toLocaleString("ko-KR")}원`);
             }
+
+            // 15년↑ 고정or비거치 (한도 1,800만원)
             if (mortgage15Either > 0) {
-                infoLines.push(`15년↑ 고정or비거치: ${mortgage15Either.toLocaleString("ko-KR")}원`);
-                if (mortgage15Either > 15000000) infoLines.push(`  (한도 1,500만원 적용)`);
+                if (mortgage15Either > LIMIT_15_EITHER) {
+                    infoLines.push(`15년↑ 고정or비거치: ${mortgage15Either.toLocaleString("ko-KR")}원`);
+                    infoLines.push(`→ 한도: ${limited15Either.toLocaleString("ko-KR")}원`);
+                } else {
+                    infoLines.push(`15년↑ 고정or비거치: ${mortgage15Either.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`└ ${limited15Either.toLocaleString("ko-KR")} × 100%\n= ${limited15Either.toLocaleString("ko-KR")}원`);
             }
+
+            // 15년↑ 기타 (한도 800만원)
             if (mortgage15Other > 0) {
-                infoLines.push(`15년↑ 기타: ${mortgage15Other.toLocaleString("ko-KR")}원`);
-                if (mortgage15Other > 5000000) infoLines.push(`  (한도 500만원 적용)`);
+                if (mortgage15Other > LIMIT_15_OTHER) {
+                    infoLines.push(`15년↑ 기타: ${mortgage15Other.toLocaleString("ko-KR")}원`);
+                    infoLines.push(`→ 한도: ${limited15Other.toLocaleString("ko-KR")}원`);
+                } else {
+                    infoLines.push(`15년↑ 기타: ${mortgage15Other.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`└ ${limited15Other.toLocaleString("ko-KR")} × 100%\n= ${limited15Other.toLocaleString("ko-KR")}원`);
             }
+
+            // 10년↑ 고정or비거치 (한도 600만원)
             if (mortgage10Either > 0) {
-                infoLines.push(`10년↑ 고정or비거치: ${mortgage10Either.toLocaleString("ko-KR")}원`);
-                if (mortgage10Either > 3000000) infoLines.push(`  (한도 300만원 적용)`);
+                if (mortgage10Either > LIMIT_10_EITHER) {
+                    infoLines.push(`10년↑ 고정or비거치: ${mortgage10Either.toLocaleString("ko-KR")}원`);
+                    infoLines.push(`→ 한도: ${limited10Either.toLocaleString("ko-KR")}원`);
+                } else {
+                    infoLines.push(`10년↑ 고정or비거치: ${mortgage10Either.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`└ ${limited10Either.toLocaleString("ko-KR")} × 100%\n= ${limited10Either.toLocaleString("ko-KR")}원`);
             }
-            if (mortgageLegacy > 0) {
-                infoLines.push(`기타: ${mortgageLegacy.toLocaleString("ko-KR")}원`);
-            }
-            if (totalDeduction > 0) {
+
+            // 합계 표시
+            if (infoLines.length > 0) {
                 infoLines.push(`──────────────`);
-                infoLines.push(`= ${totalDeduction.toLocaleString("ko-KR")}원`);
+                infoLines.push(`합계: ${totalDeduction.toLocaleString("ko-KR")}원`);
             } else {
-                infoLines.push(`지출: 0원`);
+                infoLines.push(`지출 내역 없음`);
             }
 
             return {
                 id: "2-2",
-                category: "주택자금(장기주택저당차입금이자\n상환액)",
+                category: "주택자금\n(장기주택저당차입금이자상환)",
                 type: "소득공제" as const,
                 amount: totalDeduction,
                 limit: maxLimit,
@@ -566,7 +602,7 @@ export function generateDeductionAnalysis(adminData: AdminData): DeductionAnalys
 
             return {
                 id: "2-3",
-                category: "월세 세액공제",
+                category: "월세",
                 type: "세액공제" as const,
                 amount: rentCredit,
                 limit: 10000000,

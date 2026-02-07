@@ -2824,8 +2824,8 @@ export default function CalculatorPage() {
                         </div>
                     )}
 
-                    <button className="neo-btn w-full bg-neo-orange hover:bg-neo-yellow">
-                        <Sparkles size={20} />
+                    <button className="neo-btn w-full bg-neo-orange hover:bg-neo-yellow text-xl font-black">
+                        <Sparkles size={24} />
                         AI 최적화 제안 받기
                     </button>
 

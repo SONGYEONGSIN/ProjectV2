@@ -273,3 +273,248 @@ export function getDefaultRecommendations(): AIRecommendation[] {
         }
     ];
 }
+
+/**
+ * AdminData를 TaxData 형식으로 변환합니다.
+ * AI 절세 추천에서 Admin 데이터를 사용할 수 있게 합니다.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function convertAdminDataToTaxData(adminData: any): TaxData | null {
+    if (!adminData || !adminData.salary) return null;
+
+    // 월별 데이터 합산 헬퍼
+    const getSpendingTotal = (category: string): number => {
+        if (!adminData.spending || !adminData.spending[category]) return 0;
+        return Object.values(adminData.spending[category] as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
+    };
+
+    // 총급여 계산
+    const totalSalary = Object.values(adminData.salary.monthly as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
+    const mealAllowance = Object.values(adminData.salary.mealAllowance as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
+    const salary = totalSalary - mealAllowance; // 비과세 제외
+
+    // 부양가족 수 계산
+    const dependents = 1 +
+        (adminData.family?.spouse ? 1 : 0) +
+        (adminData.family?.children || 0) +
+        (adminData.family?.parents || 0) +
+        (adminData.family?.siblings || 0);
+
+    // 주택청약저축 합산
+    const housingSubscription = (adminData.deductions?.housingSubscriptionHead || 0) +
+        (adminData.deductions?.housingSubscriptionSpouse || 0);
+
+    // 의료비 합산
+    const medical = (adminData.deductions?.medicalInfertility || 0) +
+        (adminData.deductions?.medicalPremature || 0) +
+        (adminData.deductions?.medicalDisability || 0) +
+        (adminData.deductions?.medicalElderly || 0) +
+        (adminData.deductions?.medicalOther || 0);
+
+    // 교육비 합산
+    const education = (adminData.deductions?.educationSelf || 0) +
+        (adminData.deductions?.educationPreschool1 || 0) +
+        (adminData.deductions?.educationPreschool2 || 0) +
+        (adminData.deductions?.educationPreschool3 || 0) +
+        (adminData.deductions?.educationK12_1 || 0) +
+        (adminData.deductions?.educationK12_2 || 0) +
+        (adminData.deductions?.educationK12_3 || 0) +
+        (adminData.deductions?.educationUniv1 || 0) +
+        (adminData.deductions?.educationUniv2 || 0) +
+        (adminData.deductions?.educationUniv3 || 0);
+
+    return {
+        annualSalary: totalSalary,
+        salary: salary,
+        withheldTax: adminData.salary.prepaidTax || 0,
+
+        dependents: dependents,
+        spouse: adminData.family?.spouse ? 1 : 0,
+        children: adminData.family?.children || 0,
+
+        nationalPension: adminData.salary.nationalPension || 0,
+        healthInsurance: adminData.salary.healthInsurance || 0,
+
+        creditCard: getSpendingTotal("creditCard"),
+        debitCard: getSpendingTotal("debitCard"),
+        cash: getSpendingTotal("cash"),
+        traditionalMarket: getSpendingTotal("traditionalMarket"),
+        publicTransport: getSpendingTotal("publicTransport"),
+
+        medical: medical,
+        education: education,
+
+        housingSubscription: housingSubscription,
+        monthlyRent: adminData.deductions?.housingRent || 0,
+
+        pensionSavings: adminData.deductions?.pensionSavings || 0,
+        irp: adminData.deductions?.irp || 0,
+        generalInsurance: adminData.deductions?.insurance || 0,
+
+        politicalDonation: adminData.deductions?.donationPolitical || 0,
+        hometownDonation: adminData.deductions?.donationHometown || 0,
+        designatedDonation: adminData.deductions?.donationDesignated || 0,
+    };
+}
+
+/**
+ * DeductionAnalysis 인터페이스 (tax-store.ts에서 정의된 것과 동일)
+ */
+interface DeductionAnalysisInput {
+    id: string;
+    category: string;
+    type: "소득공제" | "세액공제";
+    amount: number;
+    limit: number;
+    maxBenefit?: number;
+    status: "optimal" | "good" | "warning" | "critical";
+    thresholdInfo?: string;
+}
+
+/**
+ * AI 공제 항목별 상세 분석 결과를 기반으로 절세 추천을 생성합니다.
+ * 이미 계산된 amount, limit, status 정보를 활용하여 개선 필요 항목을 식별합니다.
+ */
+export function generateRecommendationsFromAnalysis(
+    deductionItems: DeductionAnalysisInput[],
+    salary: number = 0
+): AIRecommendation[] {
+    const recommendations: AIRecommendation[] = [];
+    let idCounter = 1;
+
+    for (const item of deductionItems) {
+        // 이미 최적화된 항목은 건너뛰기
+        if (item.status === "optimal") continue;
+
+        // 한도가 없는 항목(인적공제, 4대보험 등)은 건너뛰기
+        const maxValue = item.maxBenefit || item.limit || 0;
+        if (maxValue === 0 || item.amount >= maxValue) continue;
+
+        const shortage = maxValue - item.amount;
+        const utilizationRate = maxValue > 0 ? Math.round((item.amount / maxValue) * 100) : 0;
+
+        // 공제 유형별 절세 금액 계산
+        let potentialSaving = 0;
+        let priority: "high" | "medium" | "low" = "medium";
+        let message = "";
+        let detail = "";
+        let action = "";
+
+        // 카테고리별 추천 로직
+        if (item.category.includes("신용카드")) {
+            // 신용카드 등 소득공제: shortage는 추가 가능한 소득공제 금액 (이미 공제율 적용됨)
+            // 기본 300만(7천↓)/250만(7천↑), 추가 300만(7천↓)/200만(7천↑)
+            potentialSaving = shortage; // 이미 소득공제 금액
+            priority = item.status === "critical" ? "high" : "medium";
+            message = `신용카드 등 공제 ${formatWon(shortage)} 추가 가능`;
+            detail = `현재 ${formatWon(item.amount)} / 한도 ${formatWon(maxValue)} (${utilizationRate}% 활용). 추가 소득공제 ${formatWon(shortage)} 가능.`;
+            action = "체크카드(30%), 전통시장(40%), 대중교통(40%) 공제율이 높습니다.";
+        }
+        else if (item.category.includes("주택자금") && item.category.includes("청약")) {
+            // 주택청약: 40% 소득공제
+            // shortage는 추가 가능한 소득공제 금액 (이미 40% 공제율 적용됨)
+            // 추가 납입 가능 금액 = shortage / 0.4
+            const additionalPayment = Math.round(shortage / 0.4);
+            potentialSaving = shortage; // 이미 소득공제 금액
+            priority = "low";
+            message = `주택청약 ${formatWon(additionalPayment)} 추가 납입 가능`;
+            detail = `현재 ${formatWon(item.amount)} / 한도 ${formatWon(maxValue)} (${utilizationRate}% 활용). 추가 납입 ${formatWon(additionalPayment)} × 40% = ${formatWon(shortage)} 소득공제.`;
+            action = "무주택 세대주만 해당됩니다.";
+        }
+        else if (item.category.includes("연금저축") || item.category.includes("IRP")) {
+            // 연금저축/IRP: 16.5% 또는 13.2% 세액공제
+            // shortage는 추가 세액공제 가능 금액 (maxBenefit - amount)
+            // 추가 납입 가능 금액은 별도 계산 필요
+            const taxCreditRate = salary <= 55000000 ? 0.165 : 0.132;
+            const taxCreditRatePercent = salary <= 55000000 ? "16.5" : "13.2";
+
+            // 현재 amount는 세액공제액, shortage도 세액공제 차이
+            // 추가 납입 가능 금액 = shortage / taxCreditRate (세액공제 공제율 역산)
+            // 하지만 실제로는 12% 공제율 기준이므로 12%로 역산
+            const additionalContribution = Math.round(shortage / 0.12); // 추가 납입 가능 금액
+
+            potentialSaving = shortage; // 이미 세액공제 금액
+            priority = item.status === "critical" ? "high" : "medium";
+            message = `연금저축/IRP ${formatWon(additionalContribution)} 추가 납입 추천`;
+            detail = `현재 ${formatWon(item.amount)} / 한도 ${formatWon(maxValue)} (${utilizationRate}% 활용). 추가 납입 ${formatWon(additionalContribution)} × 12% = ${formatWon(shortage)} 세액공제.`;
+            action = "연말 전 납입하세요.";
+        }
+        else if (item.category.includes("의료비")) {
+            // 의료비: 15% 세액공제 (3% 문턱 초과분)
+            // amount, shortage 모두 세액공제 금액 (이미 15% 적용됨)
+            if (item.thresholdInfo?.includes("부족")) {
+                // 문턱 미달인 경우 - thresholdInfo에서 부족 금액 추출
+                const shortageMatch = item.thresholdInfo.match(/(\d{1,3}(,\d{3})*)/);
+                const thresholdShortage = shortageMatch ? parseInt(shortageMatch[1].replace(/,/g, "")) : 0;
+                potentialSaving = Math.round(thresholdShortage * 0.15);
+                priority = "low";
+                message = `의료비 ${formatWon(thresholdShortage)} 추가 시 공제 시작`;
+                detail = `의료비는 총급여의 3%를 초과해야 공제됩니다. 현재 ${formatWon(thresholdShortage)} 부족합니다.`;
+                action = "안경, 치과, 건강검진 등을 연내 진행하세요.";
+            } else {
+                // shortage는 세액공제 금액, 추가 지출 가능 금액 = shortage / 0.15
+                const additionalSpending = Math.round(shortage / 0.15);
+                potentialSaving = shortage; // 이미 세액공제 금액
+                priority = "low";
+                message = `의료비 추가 공제 ${formatWon(potentialSaving)} 가능`;
+                detail = `현재 ${formatWon(item.amount)} / 한도 ${formatWon(maxValue)} (${utilizationRate}% 활용). 추가 지출 ${formatWon(additionalSpending)} × 15% = ${formatWon(potentialSaving)} 절세 가능.`;
+                action = "안경, 치과, 건강검진 등을 연내 진행하세요.";
+            }
+        }
+        else if (item.category.includes("교육비")) {
+            // 교육비: 15% 세액공제
+            // shortage는 세액공제 금액, 추가 지출 가능 금액 = shortage / 0.15
+            const additionalSpending = Math.round(shortage / 0.15);
+            potentialSaving = shortage; // 이미 세액공제 금액
+            priority = "low";
+            message = `교육비 추가 공제 ${formatWon(potentialSaving)} 가능`;
+            detail = `현재 ${formatWon(item.amount)} / 한도 ${formatWon(maxValue)} (${utilizationRate}% 활용). 추가 지출 ${formatWon(additionalSpending)} × 15% = ${formatWon(potentialSaving)} 절세 가능.`;
+        }
+        else if (item.category.includes("기부금")) {
+            // 기부금: 15% 또는 30% 세액공제
+            // shortage는 세액공제 금액, 추가 기부 가능 금액 = shortage / 0.15
+            const additionalDonation = Math.round(shortage / 0.15);
+            potentialSaving = shortage; // 이미 세액공제 금액
+            priority = "medium";
+            message = `기부금 추가 공제 ${formatWon(potentialSaving)} 가능`;
+            detail = `현재 ${formatWon(item.amount)} / 한도 ${formatWon(maxValue)} (${utilizationRate}% 활용). 추가 기부 ${formatWon(additionalDonation)} × 15% = ${formatWon(potentialSaving)} 절세 가능.`;
+            action = "고향사랑 기부금은 10만원까지 전액 공제 + 답례품 혜택이 있습니다.";
+        }
+        else if (item.category.includes("보험료")) {
+            // 보험료: 12% 세액공제
+            // shortage는 세액공제 금액, 추가 납입 가능 금액 = shortage / 0.12
+            const additionalPremium = Math.round(shortage / 0.12);
+            potentialSaving = shortage; // 이미 세액공제 금액
+            priority = "low";
+            message = `보장성보험 ${formatWon(additionalPremium)} 추가 납입 가능`;
+            detail = `현재 ${formatWon(item.amount)} / 한도 ${formatWon(maxValue)} (${utilizationRate}% 활용). 추가 납입 ${formatWon(additionalPremium)} × 12% = ${formatWon(potentialSaving)} 세액공제.`;
+        }
+        else {
+            // 기타 항목
+            continue;
+        }
+
+        // 절세 금액이 0원 이상인 경우만 추천에 추가
+        if (potentialSaving > 0) {
+            recommendations.push({
+                id: String(idCounter++),
+                priority,
+                category: item.category.replace(/\n/g, " "),
+                message,
+                detail,
+                potentialSaving,
+                action: action || undefined,
+            });
+        }
+    }
+
+    // 우선순위순 정렬 (high > medium > low) 및 절세금액 기준 정렬
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    recommendations.sort((a, b) => {
+        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+        if (priorityDiff !== 0) return priorityDiff;
+        return b.potentialSaving - a.potentialSaving;
+    });
+
+    return recommendations;
+}

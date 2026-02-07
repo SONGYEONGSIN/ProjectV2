@@ -544,11 +544,7 @@ export default function AdminPage() {
         "건강검진", "검진센터"
     ];
 
-    // 전통시장 키워드 (전통시장 항목으로 별도 집계)
-    const TRADITIONAL_MARKET_KEYWORDS = [
-        "전통시장", "재래시장", "시장", "5일장", "오일장", "장터", "농수산물시장",
-        "수산시장", "농산물시장", "청과시장", "축산시장"
-    ];
+    // 전통시장은 키워드 매칭 없이 API 기반 전체 검증 (checkMarketApi)
 
     // 문화체육 키워드 (문화체육 항목으로 별도 집계)
     const CULTURE_SPORTS_KEYWORDS = [
@@ -867,10 +863,7 @@ export default function AdminPage() {
                         console.log("🏥 의료비 감지:", merchant, "-> medical");
                     }
 
-                    // 전통시장 체크 (업종 컬럼 또는 가맹점명 기반)
-                    const isTraditionalMarket = TRADITIONAL_MARKET_KEYWORDS.some(keyword =>
-                        merchantLower.includes(keyword.toLowerCase()) || categoryValue.includes(keyword.toLowerCase())
-                    );
+                    // 전통시장은 1차 키워드 없이 2차 API로만 검증 (checkMarketApi)
 
                     // 문화체육 체크 (업종 컬럼 또는 가맹점명 기반)
                     const isCultureSports = CULTURE_SPORTS_KEYWORDS.some(keyword =>
@@ -889,13 +882,13 @@ export default function AdminPage() {
 
                     if (isExcluded) excludedCnt++;
 
-                    // 카테고리 결정 (우선순위: 제외 > 대중교통 > 보험 > 의료비 > 전통시장 > 문화체육 > 카드)
+                    // 카테고리 결정 (우선순위: 제외 > 대중교통 > 보험 > 의료비 > 문화체육 > 카드)
+                    // 전통시장은 2차 API 검증으로만 분류됨
                     let category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded" = "card";
                     if (isExcluded) category = "excluded";
                     else if (isTransport || isTransportFromCategory) category = "transport";
                     else if (isInsurance) category = "insurance";
                     else if (isMedical) category = "medical";
-                    else if (isTraditionalMarket) category = "market";
                     else if (isCultureSports) category = "culture";
 
                     console.log("분류 결과:", merchant, "->", category);
@@ -913,26 +906,23 @@ export default function AdminPage() {
 
                 console.log("Parsed data count:", parsedData.length, "Excluded:", excludedCnt, "Skipped:", skippedCnt);
 
-                // 🏥 약국 API 2차 검증 - 모든 약국 키워드 가맹점 확인
+                // 🏥 약국 API 2차 검증 - 모든 가맹점 API 기반 검증 (키워드 필터 없음)
                 const checkPharmacyApi = async () => {
-                    // 모든 항목 중 약국 키워드가 포함된 가맹점 추출 (카테고리 무관)
-                    const pharmacyKeywords = ["약국", "pharmacy", "팜"];
-                    const potentialPharmacies = parsedData
-                        .filter(item => pharmacyKeywords.some(kw => item.merchant.toLowerCase().includes(kw.toLowerCase())));
+                    // excluded 제외한 모든 가맹점을 API로 보냄
+                    const allItems = parsedData.filter(item => item.category !== "excluded");
 
-                    if (potentialPharmacies.length === 0) {
-                        console.log("🏥 약국 후보 없음");
+                    if (allItems.length === 0) {
+                        console.log("🏥 약국 2차 검증: 검증할 항목 없음");
                         return;
                     }
 
-                    console.log(`🏥 약국 API 2차 검증 시작: ${potentialPharmacies.length}개 가맹점`);
-                    potentialPharmacies.forEach(p => console.log(`  - ${p.merchant} (현재: ${p.category})`));
+                    console.log(`🏥 약국 API 2차 검증 시작: ${allItems.length}개 가맹점 (전체)`);
 
                     try {
                         const response = await fetch("/api/pharmacy", {
                             method: "PUT",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ names: potentialPharmacies.map(p => p.merchant) })
+                            body: JSON.stringify({ names: allItems.map(p => p.merchant) })
                         });
 
                         if (!response.ok) {
@@ -951,23 +941,22 @@ export default function AdminPage() {
                             if (r.isPharmacy) {
                                 verifiedCount++;
                                 if (item && item.category !== "medical") {
+                                    const prevCategory = item.category;
                                     item.category = "medical";
                                     reclassifiedCount++;
-                                    console.log(`✅ 약국 API 검증 → 의료비 재분류: ${r.name}`);
+                                    console.log(`✅ 약국 API 검증 → 의료비 재분류: ${r.name} (${prevCategory} → medical)`);
                                 } else {
                                     console.log(`✅ 약국 API 검증 확인: ${r.name} (이미 의료비)`);
                                 }
-                            } else {
-                                console.log(`❌ 약국 API 검증 실패: ${r.name} (reason: ${r.reason})`);
                             }
                         });
 
-                        // 결과 알림
-                        const summary = result.summary || {};
-                        showNotification("success",
-                            `🏥 약국 API 검증: ${verifiedCount}/${potentialPharmacies.length}개 확인` +
-                            (reclassifiedCount > 0 ? `, ${reclassifiedCount}개 재분류` : "")
-                        );
+                        if (verifiedCount > 0 || reclassifiedCount > 0) {
+                            showNotification("success",
+                                `🏥 약국 API 검증: ${verifiedCount}개 약국 확인` +
+                                (reclassifiedCount > 0 ? `, ${reclassifiedCount}개 재분류` : "")
+                            );
+                        }
 
                         if (reclassifiedCount > 0) {
                             setCardExcelPreview([...parsedData]);
@@ -977,25 +966,23 @@ export default function AdminPage() {
                     }
                 };
 
-                // 🏥 병원 API 2차 검증 - 모든 병원/의원 키워드 가맹점 확인
+                // 🏥 병원 API 2차 검증 - 모든 가맹점 API 기반 검증 (키워드 필터 없음)
                 const checkHospitalApi = async () => {
-                    const hospitalKeywords = ["병원", "의원", "클리닉", "치과", "한의원", "안과", "피부과", "정형외과", "내과", "외과", "소아과", "산부인과", "이비인후과", "비뇨기과", "메디컬"];
-                    const potentialHospitals = parsedData
-                        .filter(item => hospitalKeywords.some(kw => item.merchant.toLowerCase().includes(kw.toLowerCase())));
+                    // excluded 제외한 모든 가맹점을 API로 보냄
+                    const allItems = parsedData.filter(item => item.category !== "excluded");
 
-                    if (potentialHospitals.length === 0) {
-                        console.log("🏥 병원 후보 없음");
+                    if (allItems.length === 0) {
+                        console.log("🏥 병원 2차 검증: 검증할 항목 없음");
                         return;
                     }
 
-                    console.log(`🏥 병원 API 2차 검증 시작: ${potentialHospitals.length}개 가맹점`);
-                    potentialHospitals.forEach(p => console.log(`  - ${p.merchant} (현재: ${p.category})`));
+                    console.log(`🏥 병원 API 2차 검증 시작: ${allItems.length}개 가맹점 (전체)`);
 
                     try {
                         const response = await fetch("/api/hospital", {
                             method: "PUT",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ names: potentialHospitals.map(p => p.merchant) })
+                            body: JSON.stringify({ names: allItems.map(p => p.merchant) })
                         });
 
                         if (!response.ok) {
@@ -1013,21 +1000,22 @@ export default function AdminPage() {
                             if (r.isHospital) {
                                 verifiedCount++;
                                 if (item && item.category !== "medical") {
+                                    const prevCategory = item.category;
                                     item.category = "medical";
                                     reclassifiedCount++;
-                                    console.log(`✅ 병원 API 검증 → 의료비 재분류: ${r.name}`);
+                                    console.log(`✅ 병원 API 검증 → 의료비 재분류: ${r.name} (${prevCategory} → medical)`);
                                 } else {
                                     console.log(`✅ 병원 API 검증 확인: ${r.name} (이미 의료비)`);
                                 }
-                            } else {
-                                console.log(`❌ 병원 API 검증 실패: ${r.name} (reason: ${r.reason})`);
                             }
                         });
 
-                        showNotification("success",
-                            `🏥 병원 API 검증: ${verifiedCount}/${potentialHospitals.length}개 확인` +
-                            (reclassifiedCount > 0 ? `, ${reclassifiedCount}개 재분류` : "")
-                        );
+                        if (verifiedCount > 0 || reclassifiedCount > 0) {
+                            showNotification("success",
+                                `🏥 병원 API 검증: ${verifiedCount}개 병원 확인` +
+                                (reclassifiedCount > 0 ? `, ${reclassifiedCount}개 재분류` : "")
+                            );
+                        }
 
                         if (reclassifiedCount > 0) {
                             setCardExcelPreview([...parsedData]);
@@ -1037,9 +1025,69 @@ export default function AdminPage() {
                     }
                 };
 
+                // 🏪 전통시장 API 2차 검증 - 모든 가맹점 API 기반 검증 (키워드 필터 없음)
+                const checkMarketApi = async () => {
+                    // excluded 제외한 모든 가맹점을 API로 보냄
+                    const allItems = parsedData.filter(item => item.category !== "excluded");
+
+                    if (allItems.length === 0) {
+                        console.log("🏪 전통시장 2차 검증: 검증할 항목 없음");
+                        return;
+                    }
+
+                    console.log(`🏪 전통시장 API 2차 검증 시작: ${allItems.length}개 가맹점 (전체)`);
+
+                    try {
+                        const response = await fetch("/api/market", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ names: allItems.map(p => p.merchant) })
+                        });
+
+                        if (!response.ok) {
+                            console.warn("🏪 전통시장 API 호출 실패:", response.status);
+                            return;
+                        }
+
+                        const result = await response.json();
+                        console.log("🏪 전통시장 API 응답:", result);
+
+                        let verifiedCount = 0;
+                        let reclassifiedCount = 0;
+                        result.results?.forEach((r: { name: string; isMarket: boolean; reason?: string; marketName?: string }) => {
+                            const item = parsedData.find(p => p.merchant === r.name);
+                            if (r.isMarket) {
+                                verifiedCount++;
+                                if (item && item.category !== "market") {
+                                    const prevCategory = item.category;
+                                    item.category = "market";
+                                    reclassifiedCount++;
+                                    console.log(`✅ 전통시장 API 검증 → 전통시장 재분류: ${r.name} (${prevCategory} → market, 시장명: ${r.marketName})`);
+                                } else {
+                                    console.log(`✅ 전통시장 API 검증 확인: ${r.name} (이미 전통시장, 시장명: ${r.marketName})`);
+                                }
+                            }
+                        });
+
+                        if (verifiedCount > 0 || reclassifiedCount > 0) {
+                            showNotification("success",
+                                `🏪 전통시장 API 검증: ${verifiedCount}개 전통시장 확인` +
+                                (reclassifiedCount > 0 ? `, ${reclassifiedCount}개 재분류` : "")
+                            );
+                        }
+
+                        if (reclassifiedCount > 0) {
+                            setCardExcelPreview([...parsedData]);
+                        }
+                    } catch (error) {
+                        console.error("🏪 전통시장 API 오류:", error);
+                    }
+                };
+
                 // 배치 API 호출 (비동기)
                 checkPharmacyApi();
                 checkHospitalApi();
+                checkMarketApi();
 
                 // 디버깅: 카테고리별 합계 출력
                 const cardTotal = parsedData.filter(i => i.category === "card").reduce((s, i) => s + i.amount, 0);

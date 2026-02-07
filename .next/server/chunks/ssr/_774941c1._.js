@@ -124,9 +124,20 @@ function hasAdminData(year) {
     }
 }
 function generateDeductionAnalysis(adminData) {
-    const salary = adminData.salary.totalSalary - adminData.salary.mealAllowance;
+    // 총급여액 = 급여(totalSalary) + 상여금(bonus) + 자녀학자금(childTuition) - 비과세(mealAllowance + 보육수당)
+    const childcareAllowance = (adminData.salary.childrenUnder6 || 0) * 200000 * 12; // 6세 이하 자녀당 월 20만원
+    const totalNonTaxable = (adminData.salary.mealAllowance || 0) + childcareAllowance;
+    const salary = (adminData.salary.totalSalary || 0) + (adminData.salary.bonus || 0) + (adminData.salary.childTuition || 0) - totalNonTaxable;
     const spending = adminData.spending;
     const deductions = adminData.deductions;
+    // spendingItems에서 직접 금액을 계산하는 헬퍼 (레거시 데이터 호환용)
+    const getSpendingItemAmount = (name)=>{
+        if (!adminData.spendingItems) return 0;
+        return adminData.spendingItems.filter((i)=>i.name && i.name.includes(name)).reduce((sum, item)=>{
+            const amount = typeof item.amount === 'string' ? parseInt(item.amount.replace(/[^0-9]/g, '')) || 0 : item.amount || 0;
+            return sum + amount;
+        }, 0);
+    };
     // 신용카드 등 소득공제 계산
     const totalCardSpending = spending.creditCard + spending.debitCard + spending.cash + spending.publicTransport + spending.traditionalMarket + spending.culture;
     const minSpending = salary * 0.25; // 25% 문턱
@@ -190,6 +201,20 @@ function generateDeductionAnalysis(adminData) {
     // 인적공제 (부양가족 수)
     const dependents = 1 + (adminData.family?.spouse ? 1 : 0) + (adminData.family?.children || 0) + (adminData.family?.parents || 0) + (adminData.family?.siblings || 0) + (adminData.family?.foster || 0) + (adminData.family?.recipient || 0);
     const personalDeduction = dependents * 1500000;
+    // 근로소득금액 계산 (총급여 - 근로소득공제)
+    let incomeDeduction = 0;
+    if (salary <= 5000000) {
+        incomeDeduction = salary * 0.7;
+    } else if (salary <= 15000000) {
+        incomeDeduction = 3500000 + (salary - 5000000) * 0.4;
+    } else if (salary <= 45000000) {
+        incomeDeduction = 7500000 + (salary - 15000000) * 0.15;
+    } else if (salary <= 100000000) {
+        incomeDeduction = 12000000 + (salary - 45000000) * 0.05;
+    } else {
+        incomeDeduction = 14750000 + (salary - 100000000) * 0.02;
+    }
+    const earnedIncome = Math.round(salary - incomeDeduction); // 근로소득금액
     const items = [
         {
             id: "0",
@@ -200,15 +225,30 @@ function generateDeductionAnalysis(adminData) {
             status: "optimal",
             thresholdInfo: `부양가족 ${dependents}명 × 150만원`
         },
-        {
-            id: "0-1",
-            category: "4대보험",
-            type: "소득공제",
-            amount: socialInsurance,
-            limit: socialInsurance,
-            status: "optimal",
-            thresholdInfo: "납부액 전액 공제"
-        },
+        (()=>{
+            // 4대보험 상세 내역
+            const nationalPension = adminData.salary.nationalPension || 0;
+            const healthInsurance = adminData.salary.healthInsurance || 0;
+            const longTermCare = adminData.salary.longTermCare || 0;
+            const employmentInsurance = adminData.salary.employmentInsurance || 0;
+            const total = nationalPension + healthInsurance + longTermCare + employmentInsurance;
+            const infoLines = [];
+            infoLines.push(`국민연금: ${nationalPension.toLocaleString("ko-KR")}원`);
+            infoLines.push(`건강보험: ${healthInsurance.toLocaleString("ko-KR")}원`);
+            infoLines.push(`요양보험: ${longTermCare.toLocaleString("ko-KR")}원`);
+            infoLines.push(`고용보험: ${employmentInsurance.toLocaleString("ko-KR")}원`);
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${total.toLocaleString("ko-KR")}원`);
+            return {
+                id: "0-1",
+                category: "4대보험",
+                type: "소득공제",
+                amount: total,
+                limit: total,
+                status: "optimal",
+                thresholdInfo: infoLines.join("\n")
+            };
+        })(),
         {
             id: "1",
             category: "신용카드 등 사용금액",
@@ -216,85 +256,632 @@ function generateDeductionAnalysis(adminData) {
             amount: finalCardDeduction,
             limit: cardLimit,
             status: getCardStatus(),
-            thresholdInfo: `25% 문턱: ${Math.round(minSpending).toLocaleString("ko-KR")}원`
+            thresholdInfo: `25% 문턱: ${Math.round(minSpending).toLocaleString("ko-KR")}원\n지출: ${totalCardSpending.toLocaleString("ko-KR")}원\n초과분: ${Math.max(0, totalCardSpending - Math.round(minSpending)).toLocaleString("ko-KR")}원`
         },
-        {
-            id: "2",
-            category: "주택자금(청약저축)",
-            type: "소득공제",
-            amount: deductions.housingSubscription || deductions.housing || 0,
-            limit: 3000000,
-            status: getStatus((deductions.housingSubscription || deductions.housing || 0) / 3000000),
-            thresholdInfo: "연 300만원 한도, 40% 공제"
-        },
-        {
-            id: "2-1",
-            category: "주택자금(임차차입금)",
-            type: "소득공제",
-            amount: deductions.housingLoan || 0,
-            limit: 4000000,
-            status: getStatus((deductions.housingLoan || 0) / 4000000),
-            thresholdInfo: "연 400만원 한도, 40% 공제"
-        },
-        {
-            id: "2-2",
-            category: "주택자금(장기주택저당차입금)",
-            type: "소득공제",
-            amount: deductions.housingMortgage || 0,
-            limit: 18000000,
-            status: getStatus((deductions.housingMortgage || 0) / 18000000),
-            thresholdInfo: "연 300~1,800만원 한도"
-        },
-        {
-            id: "2-3",
-            category: "월세 세액공제",
-            type: "세액공제",
-            amount: deductions.housingRent || 0,
-            limit: 10000000,
-            status: getStatus((deductions.housingRent || 0) / 10000000),
-            thresholdInfo: "연 1,000만원 한도, 17% 공제"
-        },
-        {
-            id: "3",
-            category: "의료비",
-            type: "세액공제",
-            amount: deductions.medical,
-            limit: 7000000,
-            status: deductions.medical > salary * 0.03 ? "good" : "warning",
-            thresholdInfo: `3% 문턱: ${Math.round(salary * 0.03).toLocaleString("ko-KR")}원`
-        },
-        {
-            id: "4",
-            category: "교육비",
-            type: "세액공제",
-            amount: deductions.education,
-            limit: 3000000,
-            status: getStatus(deductions.education / 3000000)
-        },
-        {
-            id: "5",
-            category: "기부금",
-            type: "세액공제",
-            amount: deductions.donation,
-            limit: 200000,
-            status: getStatus(deductions.donation / 200000)
-        },
-        {
-            id: "6",
-            category: "연금저축/IRP",
-            type: "세액공제",
-            amount: deductions.pension,
-            limit: 9000000,
-            status: getStatus(deductions.pension / 9000000)
-        },
-        {
-            id: "7",
-            category: "보험료",
-            type: "세액공제",
-            amount: deductions.insurance,
-            limit: 1000000,
-            status: getStatus(deductions.insurance / 1000000)
-        }
+        (()=>{
+            // 주택자금 - 청약저축 + 임차차입금원리금상환액
+            // 청약저축: 납입한도 300만원
+            // 임차차입금: 원리금상환액
+            // 공제율: 40%, 공제한도: 400만원 (최종 공제액 기준)
+            // 청약저축 데이터 (세대주/배우자)
+            const headAmount = deductions.housingSubscriptionHead ?? getSpendingItemAmount("주택자금(청약저축) - 세대주");
+            const spouseAmount = deductions.housingSubscriptionSpouse ?? getSpendingItemAmount("주택자금(청약저축) - 배우자");
+            const subscriptionTotal = headAmount + spouseAmount;
+            // 청약저축 납입한도 300만원 적용
+            const limitedSubscription = Math.min(subscriptionTotal, 3000000);
+            // 임차차입금원리금상환액
+            const loanAmount = deductions.housingLoan || 0;
+            // 합산액 (청약저축 한도 적용 후 + 임차차입금)
+            const combinedTotal = limitedSubscription + loanAmount;
+            // 공제액 계산: 합산액 × 40%
+            const calculatedDeduction = Math.round(combinedTotal * 0.4);
+            // 공제한도 400만원 적용 (최종 공제액 기준)
+            const finalDeduction = Math.min(calculatedDeduction, 4000000);
+            // thresholdInfo 생성
+            const infoLines = [];
+            infoLines.push("【 청약저축 + 임차차입금 합산 】");
+            if (headAmount > 0 || spouseAmount > 0) {
+                infoLines.push(`청약저축:`);
+                if (headAmount > 0) infoLines.push(`  세대주: ${headAmount.toLocaleString("ko-KR")}원`);
+                if (spouseAmount > 0) infoLines.push(`  배우자: ${spouseAmount.toLocaleString("ko-KR")}원`);
+                if (subscriptionTotal > 3000000) {
+                    infoLines.push(`  (납입한도 300만원 적용)`);
+                }
+            }
+            if (loanAmount > 0) {
+                infoLines.push(`임차차입금: ${loanAmount.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`──────────────`);
+            infoLines.push(`합산: ${combinedTotal.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${combinedTotal.toLocaleString("ko-KR")} × 40%`);
+            infoLines.push(`= ${calculatedDeduction.toLocaleString("ko-KR")}원`);
+            if (calculatedDeduction > 4000000) {
+                infoLines.push(`(공제한도 400만원 적용)`);
+                infoLines.push(`→ ${finalDeduction.toLocaleString("ko-KR")}원`);
+            }
+            return {
+                id: "2",
+                category: "주택자금(청약저축+임차차입금)",
+                type: "소득공제",
+                amount: finalDeduction,
+                limit: 4000000,
+                status: getStatus(calculatedDeduction / 4000000),
+                thresholdInfo: infoLines.join("\n")
+            };
+        })(),
+        (()=>{
+            // 장기주택저당차입금이자상환액 - 옵션별 한도 적용
+            // 15년이상 고정금리+비거치식: 1,800만원
+            // 15년이상 고정금리 or 비거치식: 1,500만원
+            // 15년이상 기타: 500만원
+            // 10년이상 고정금리 or 비거치식: 300만원
+            const mortgage15Fixed = deductions.housingMortgage15Fixed || 0;
+            const mortgage15Either = deductions.housingMortgage15Either || 0;
+            const mortgage15Other = deductions.housingMortgage15Other || 0;
+            const mortgage10Either = deductions.housingMortgage10Either || 0;
+            // 레거시 호환
+            const mortgageLegacy = deductions.housingMortgage || 0;
+            // 옵션별 한도 적용
+            const limited15Fixed = Math.min(mortgage15Fixed, 18000000);
+            const limited15Either = Math.min(mortgage15Either, 15000000);
+            const limited15Other = Math.min(mortgage15Other, 5000000);
+            const limited10Either = Math.min(mortgage10Either, 3000000);
+            // 총 공제액 (이자 전액 공제이므로 한도 적용 금액 = 공제액)
+            const totalDeduction = limited15Fixed + limited15Either + limited15Other + limited10Either + mortgageLegacy;
+            const maxLimit = 18000000; // 최대 한도 표시용
+            // thresholdInfo 생성
+            const infoLines = [];
+            infoLines.push("【 장기주택저당차입금 이자상환액 】");
+            if (mortgage15Fixed > 0) {
+                infoLines.push(`15년↑ 고정+비거치: ${mortgage15Fixed.toLocaleString("ko-KR")}원`);
+                if (mortgage15Fixed > 18000000) infoLines.push(`  (한도 1,800만원 적용)`);
+            }
+            if (mortgage15Either > 0) {
+                infoLines.push(`15년↑ 고정or비거치: ${mortgage15Either.toLocaleString("ko-KR")}원`);
+                if (mortgage15Either > 15000000) infoLines.push(`  (한도 1,500만원 적용)`);
+            }
+            if (mortgage15Other > 0) {
+                infoLines.push(`15년↑ 기타: ${mortgage15Other.toLocaleString("ko-KR")}원`);
+                if (mortgage15Other > 5000000) infoLines.push(`  (한도 500만원 적용)`);
+            }
+            if (mortgage10Either > 0) {
+                infoLines.push(`10년↑ 고정or비거치: ${mortgage10Either.toLocaleString("ko-KR")}원`);
+                if (mortgage10Either > 3000000) infoLines.push(`  (한도 300만원 적용)`);
+            }
+            if (mortgageLegacy > 0) {
+                infoLines.push(`기타: ${mortgageLegacy.toLocaleString("ko-KR")}원`);
+            }
+            if (totalDeduction > 0) {
+                infoLines.push(`──────────────`);
+                infoLines.push(`= ${totalDeduction.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`지출: 0원`);
+            }
+            return {
+                id: "2-2",
+                category: "주택자금(장기주택저당차입금이자\n상환액)",
+                type: "소득공제",
+                amount: totalDeduction,
+                limit: maxLimit,
+                status: getStatus(totalDeduction / maxLimit),
+                thresholdInfo: infoLines.join("\n")
+            };
+        })(),
+        (()=>{
+            // 월세 세액공제 - 급여에 따라 공제율 결정
+            const rentAmount = deductions.housingRent || 0;
+            const rentRate = salary <= 55000000 ? 0.17 : 0.15;
+            const rentRatePercent = salary <= 55000000 ? "17%" : "15%";
+            const limitedRent = Math.min(rentAmount, 10000000);
+            const rentCredit = Math.round(limitedRent * rentRate);
+            // thresholdInfo 생성 - 기부금처럼 세부 계산식 표시
+            const infoLines = [];
+            infoLines.push(`총급여: ${salary.toLocaleString("ko-KR")}원`);
+            infoLines.push(`→ ${salary <= 55000000 ? "5,500만원 이하" : "5,500만원 초과"}`);
+            infoLines.push(`──────────────`);
+            infoLines.push(`지출: ${rentAmount.toLocaleString("ko-KR")}원`);
+            if (rentAmount > 10000000) {
+                infoLines.push(`한도: ${10000000..toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${limitedRent.toLocaleString("ko-KR")} × ${rentRatePercent}`);
+            infoLines.push(`= ${rentCredit.toLocaleString("ko-KR")}원`);
+            return {
+                id: "2-3",
+                category: "월세 세액공제",
+                type: "세액공제",
+                amount: rentCredit,
+                limit: 10000000,
+                status: getStatus(rentAmount / 10000000),
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: 10000000 * rentRate,
+                rentLimitInfo: {
+                    salary: salary,
+                    limit: 10000000,
+                    rate: rentRate,
+                    ratePercent: rentRatePercent,
+                    isLowIncome: salary <= 55000000
+                }
+            };
+        })(),
+        (()=>{
+            // 의료비 계산 및 계산식 생성
+            const infertility = deductions.medicalInfertility || 0; // 난임시술비: 30%
+            const premature = deductions.medicalPremature || 0; // 미숙아,선천성: 20%
+            const selfMedical = deductions.medicalSelf || 0; // 본인,장애,65세,6세: 15%
+            const familyMedical = deductions.medicalFamily || 0; // 그밖부양가족: 15%
+            // 총 의료비 (레거시 호환 포함)
+            const totalMedical = infertility + premature + selfMedical + familyMedical + (deductions.medical || 0);
+            // 3% 문턱
+            const threshold = Math.round(salary * 0.03);
+            const exceeds = totalMedical > threshold;
+            // 각 카테고리별 세액공제액 계산 (3% 문턱은 전체에 적용)
+            // 실제로는 그밖부양가족만 700만원 한도 적용
+            const FAMILY_LIMIT = 7000000;
+            const familyLimited = Math.min(familyMedical, FAMILY_LIMIT);
+            const infertilityCredit = Math.round(infertility * 0.30);
+            const prematureCredit = Math.round(premature * 0.20);
+            const selfCredit = Math.round(selfMedical * 0.15);
+            const familyCredit = Math.round(familyLimited * 0.15);
+            // 총 세액공제액 (3% 문턱 초과분에만 적용)
+            const totalCredit = exceeds ? Math.round(Math.max(0, infertility - Math.min(threshold, infertility)) * 0.30) + Math.round(Math.max(0, premature) * 0.20) + Math.round(Math.max(0, selfMedical) * 0.15) + Math.round(Math.min(familyMedical, FAMILY_LIMIT) * 0.15) : 0;
+            // thresholdInfo 생성 - 각 카테고리별 계산식 표시
+            const infoLines = [];
+            // 3% 문턱 정보 추가 (신용카드와 동일한 형식)
+            infoLines.push(`3% 문턱: ${threshold.toLocaleString("ko-KR")}원`);
+            infoLines.push(`지출: ${totalMedical.toLocaleString("ko-KR")}원`);
+            infoLines.push(`초과분: ${Math.max(0, totalMedical - threshold).toLocaleString("ko-KR")}원`);
+            infoLines.push(`──────────────`);
+            // 난임시술비
+            infoLines.push(`난임시술비: ${infertility.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${infertility.toLocaleString("ko-KR")} × 30%\n= ${infertilityCredit.toLocaleString("ko-KR")}원`);
+            // 미숙아,선천성
+            infoLines.push(`미숙아·선천성: ${premature.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${premature.toLocaleString("ko-KR")} × 20%\n= ${prematureCredit.toLocaleString("ko-KR")}원`);
+            // 본인,장애,65세,6세
+            infoLines.push(`본인/장애/만65/6세: ${selfMedical.toLocaleString("ko-KR")}원`);
+            infoLines.push(`└ ${selfMedical.toLocaleString("ko-KR")} × 15%\n= ${selfCredit.toLocaleString("ko-KR")}원`);
+            // 그밖부양가족 (700만원 한도)
+            if (familyMedical > FAMILY_LIMIT) {
+                infoLines.push(`그 밖의 부양가족: ${familyMedical.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 한도: ${FAMILY_LIMIT.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`그 밖의 부양가족: ${familyMedical.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${familyLimited.toLocaleString("ko-KR")} × 15%\n= ${familyCredit.toLocaleString("ko-KR")}원`);
+            // 합계
+            const totalCreditSum = infertilityCredit + prematureCredit + selfCredit + familyCredit;
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${totalCreditSum.toLocaleString("ko-KR")}원`);
+            return {
+                id: "3",
+                category: "의료비",
+                type: "세액공제",
+                amount: totalCreditSum,
+                limit: FAMILY_LIMIT,
+                status: getStatus(totalMedical / 10000000),
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: FAMILY_LIMIT * 0.15
+            };
+        })(),
+        (()=>{
+            // 교육비 계산 및 계산식 생성
+            const eduSelf = deductions.educationSelf || 0; // 본인: 한도 없음
+            // 자녀별 교육비 (1인당 300만원 한도)
+            const pre1 = deductions.educationPreschool1 || 0;
+            const pre2 = deductions.educationPreschool2 || 0;
+            const pre3 = deductions.educationPreschool3 || 0;
+            const k12_1 = deductions.educationK12_1 || 0;
+            const k12_2 = deductions.educationK12_2 || 0;
+            const k12_3 = deductions.educationK12_3 || 0;
+            // 자녀별 대학 교육비 (1인당 900만원 한도)
+            const univ1 = deductions.educationUniv1 || 0;
+            const univ2 = deductions.educationUniv2 || 0;
+            const univ3 = deductions.educationUniv3 || 0;
+            // 한도 적용
+            const CHILD_LIMIT = 3000000; // 미취학·초중고: 1인당 300만원
+            const UNIV_LIMIT = 9000000; // 대학: 1인당 900만원
+            const eduSelfLimited = eduSelf; // 본인은 한도 없음
+            const pre1Limited = Math.min(pre1, CHILD_LIMIT);
+            const pre2Limited = Math.min(pre2, CHILD_LIMIT);
+            const pre3Limited = Math.min(pre3, CHILD_LIMIT);
+            const k12_1Limited = Math.min(k12_1, CHILD_LIMIT);
+            const k12_2Limited = Math.min(k12_2, CHILD_LIMIT);
+            const k12_3Limited = Math.min(k12_3, CHILD_LIMIT);
+            const univ1Limited = Math.min(univ1, UNIV_LIMIT);
+            const univ2Limited = Math.min(univ2, UNIV_LIMIT);
+            const univ3Limited = Math.min(univ3, UNIV_LIMIT);
+            // 세액공제액 계산 (15%)
+            const eduSelfCredit = Math.round(eduSelfLimited * 0.15);
+            const pre1Credit = Math.round(pre1Limited * 0.15);
+            const pre2Credit = Math.round(pre2Limited * 0.15);
+            const pre3Credit = Math.round(pre3Limited * 0.15);
+            const k12_1Credit = Math.round(k12_1Limited * 0.15);
+            const k12_2Credit = Math.round(k12_2Limited * 0.15);
+            const k12_3Credit = Math.round(k12_3Limited * 0.15);
+            const univ1Credit = Math.round(univ1Limited * 0.15);
+            const univ2Credit = Math.round(univ2Limited * 0.15);
+            const univ3Credit = Math.round(univ3Limited * 0.15);
+            const totalCredit = eduSelfCredit + pre1Credit + pre2Credit + pre3Credit + k12_1Credit + k12_2Credit + k12_3Credit + univ1Credit + univ2Credit + univ3Credit;
+            // thresholdInfo 생성 - 금액이 있는 항목만 계산식과 함께 표시
+            const infoLines = [];
+            // 헬퍼 함수: 교육비 계산식 추가
+            const addEduInfo = (label, amount, limit, limited, credit)=>{
+                if (amount > 0) {
+                    if (amount > limit) {
+                        infoLines.push(`${label}: ${amount.toLocaleString("ko-KR")}원`);
+                        infoLines.push(`→ 한도: ${limited.toLocaleString("ko-KR")}원`);
+                    } else {
+                        infoLines.push(`${label}: ${amount.toLocaleString("ko-KR")}원`);
+                    }
+                    infoLines.push(`└ ${limited.toLocaleString("ko-KR")} × 15%\n= ${credit.toLocaleString("ko-KR")}원`);
+                }
+            };
+            if (eduSelf > 0) {
+                infoLines.push(`본인: ${eduSelf.toLocaleString("ko-KR")}원`);
+                infoLines.push(`└ ${eduSelf.toLocaleString("ko-KR")} × 15%\n= ${eduSelfCredit.toLocaleString("ko-KR")}원`);
+            }
+            addEduInfo("미취학-자녀1", pre1, CHILD_LIMIT, pre1Limited, pre1Credit);
+            addEduInfo("미취학-자녀2", pre2, CHILD_LIMIT, pre2Limited, pre2Credit);
+            addEduInfo("미취학-자녀3", pre3, CHILD_LIMIT, pre3Limited, pre3Credit);
+            addEduInfo("초중고-자녀1", k12_1, CHILD_LIMIT, k12_1Limited, k12_1Credit);
+            addEduInfo("초중고-자녀2", k12_2, CHILD_LIMIT, k12_2Limited, k12_2Credit);
+            addEduInfo("초중고-자녀3", k12_3, CHILD_LIMIT, k12_3Limited, k12_3Credit);
+            addEduInfo("대학-자녀1", univ1, UNIV_LIMIT, univ1Limited, univ1Credit);
+            addEduInfo("대학-자녀2", univ2, UNIV_LIMIT, univ2Limited, univ2Credit);
+            addEduInfo("대학-자녀3", univ3, UNIV_LIMIT, univ3Limited, univ3Credit);
+            if (infoLines.length > 0) {
+                infoLines.push(`──────────────`);
+                infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+            }
+            const totalEducation = eduSelf + pre1 + pre2 + pre3 + k12_1 + k12_2 + k12_3 + univ1 + univ2 + univ3;
+            return {
+                id: "4",
+                category: "교육비",
+                type: "세액공제",
+                amount: totalCredit,
+                limit: 9000000,
+                status: getStatus(totalEducation > 0 ? Math.min(totalEducation / 9000000, 1) : 0),
+                thresholdInfo: infoLines.length > 0 ? infoLines.join("\n") : "본인: 한도 없음\n미취학: 1인당 3,000,000원\n초중고: 1인당 3,000,000원\n대학: 1인당 9,000,000원",
+                maxBenefit: 9000000 * 0.15
+            };
+        })(),
+        (()=>{
+            // 정치자금 계산 및 계산식 생성 (한도: 근로소득금액)
+            const politicalRaw = deductions.donationPolitical || 0;
+            const politicalLimit = earnedIncome; // 정치자금 한도 = 근로소득금액
+            const political = Math.min(politicalRaw, politicalLimit); // 한도 적용
+            const isLimited = politicalRaw > politicalLimit;
+            let politicalCredit = 0;
+            let politicalFormula = "";
+            if (political > 0) {
+                if (political <= 100000) {
+                    politicalCredit = Math.round(political * 100 / 110);
+                    politicalFormula = `└ ${political.toLocaleString("ko-KR")} × 100/110\n= ${politicalCredit.toLocaleString("ko-KR")}원`;
+                } else if (political <= 30000000) {
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const excessCredit = Math.round((political - 100000) * 0.15);
+                    politicalCredit = baseCredit + excessCredit;
+                    politicalFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원 초과: ${(political - 100000).toLocaleString("ko-KR")} × 15%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
+                } else {
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const midCredit = Math.round(29900000 * 0.15);
+                    const highCredit = Math.round((political - 30000000) * 0.25);
+                    politicalCredit = baseCredit + midCredit + highCredit;
+                    politicalFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원~3천만원: 29,900,000 × 15%\n= ${midCredit.toLocaleString("ko-KR")}원\n└ 3천만원 초과: ${(political - 30000000).toLocaleString("ko-KR")} × 25%\n= ${highCredit.toLocaleString("ko-KR")}원`;
+                }
+            }
+            // 고향사랑 계산 및 계산식 생성
+            const hometown = deductions.donationHometown || 0;
+            let hometownCredit = 0;
+            let hometownFormula = "";
+            if (hometown > 0) {
+                if (hometown <= 100000) {
+                    hometownCredit = Math.round(hometown * 100 / 110);
+                    hometownFormula = `└ ${hometown.toLocaleString("ko-KR")} × 100/110\n= ${hometownCredit.toLocaleString("ko-KR")}원`;
+                } else {
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const excessCredit = Math.round((hometown - 100000) * 0.15);
+                    hometownCredit = baseCredit + excessCredit;
+                    hometownFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원 초과: ${(hometown - 100000).toLocaleString("ko-KR")} × 15%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
+                }
+            }
+            // 고향사랑특별재난 계산 및 계산식 생성
+            const disaster = deductions.donationDisaster || 0;
+            let disasterCredit = 0;
+            let disasterFormula = "";
+            if (disaster > 0) {
+                if (disaster <= 100000) {
+                    disasterCredit = Math.round(disaster * 100 / 110);
+                    disasterFormula = `└ ${disaster.toLocaleString("ko-KR")} × 100/110\n= ${disasterCredit.toLocaleString("ko-KR")}원`;
+                } else {
+                    const baseCredit = Math.round(100000 * 100 / 110);
+                    const excessCredit = Math.round((disaster - 100000) * 0.3);
+                    disasterCredit = baseCredit + excessCredit;
+                    disasterFormula = `└ 10만원 이하: 100,000 × 100/110\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 10만원 초과: ${(disaster - 100000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
+                }
+            }
+            // 특례기부금 계산 및 계산식 생성
+            const special = deductions.donationSpecial || 0;
+            let specialCredit = 0;
+            let specialFormula = "";
+            if (special > 0) {
+                if (special <= 10000000) {
+                    specialCredit = Math.round(special * 0.15);
+                    specialFormula = `└ ${special.toLocaleString("ko-KR")} × 15%\n= ${specialCredit.toLocaleString("ko-KR")}원`;
+                } else {
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((special - 10000000) * 0.3);
+                    specialCredit = baseCredit + excessCredit;
+                    specialFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(special - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
+                }
+            }
+            // 우리사주조합 계산 및 계산식 생성
+            const stock = deductions.donationStock || 0;
+            let stockCredit = 0;
+            let stockFormula = "";
+            if (stock > 0) {
+                if (stock <= 10000000) {
+                    stockCredit = Math.round(stock * 0.15);
+                    stockFormula = `└ ${stock.toLocaleString("ko-KR")} × 15%\n= ${stockCredit.toLocaleString("ko-KR")}원`;
+                } else {
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((stock - 10000000) * 0.3);
+                    stockCredit = baseCredit + excessCredit;
+                    stockFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(stock - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
+                }
+            }
+            // 일반기부금(종교) 계산 및 계산식 생성
+            const religious = deductions.donationReligious || 0;
+            let religiousCredit = 0;
+            let religiousFormula = "";
+            if (religious > 0) {
+                if (religious <= 10000000) {
+                    religiousCredit = Math.round(religious * 0.15);
+                    religiousFormula = `└ ${religious.toLocaleString("ko-KR")} × 15%\n= ${religiousCredit.toLocaleString("ko-KR")}원`;
+                } else {
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((religious - 10000000) * 0.3);
+                    religiousCredit = baseCredit + excessCredit;
+                    religiousFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(religious - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
+                }
+            }
+            // 일반기부금(종교 외) 계산 및 계산식 생성
+            const nonReligious = deductions.donationNonReligious || 0;
+            let nonReligiousCredit = 0;
+            let nonReligiousFormula = "";
+            if (nonReligious > 0) {
+                if (nonReligious <= 10000000) {
+                    nonReligiousCredit = Math.round(nonReligious * 0.15);
+                    nonReligiousFormula = `└ ${nonReligious.toLocaleString("ko-KR")} × 15%\n= ${nonReligiousCredit.toLocaleString("ko-KR")}원`;
+                } else {
+                    const baseCredit = Math.round(10000000 * 0.15);
+                    const excessCredit = Math.round((nonReligious - 10000000) * 0.3);
+                    nonReligiousCredit = baseCredit + excessCredit;
+                    nonReligiousFormula = `└ 1천만원 이하: 10,000,000 × 15%\n= ${baseCredit.toLocaleString("ko-KR")}원\n└ 1천만원 초과: ${(nonReligious - 10000000).toLocaleString("ko-KR")} × 30%\n= ${excessCredit.toLocaleString("ko-KR")}원`;
+                }
+            }
+            const totalCredit = politicalCredit + hometownCredit + disasterCredit + specialCredit + stockCredit + religiousCredit + nonReligiousCredit;
+            // thresholdInfo 생성 - 금액이 있는 항목만 계산식과 함께 표시
+            const infoLines = [];
+            if (political > 0) {
+                if (isLimited) {
+                    infoLines.push(`정치자금: ${politicalRaw.toLocaleString("ko-KR")}원`);
+                    infoLines.push(`→ 한도: ${political.toLocaleString("ko-KR")}원`);
+                } else {
+                    infoLines.push(`정치자금: ${political.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(politicalFormula);
+            }
+            if (hometown > 0) {
+                infoLines.push(`고향사랑: ${hometown.toLocaleString("ko-KR")}원`);
+                infoLines.push(hometownFormula);
+            }
+            if (disaster > 0) {
+                infoLines.push(`특별재난: ${disaster.toLocaleString("ko-KR")}원`);
+                infoLines.push(disasterFormula);
+            }
+            if (special > 0) {
+                infoLines.push(`특례기부금: ${special.toLocaleString("ko-KR")}원`);
+                infoLines.push(specialFormula);
+            }
+            if (stock > 0) {
+                infoLines.push(`우리사주: ${stock.toLocaleString("ko-KR")}원`);
+                infoLines.push(stockFormula);
+            }
+            if (religious > 0) {
+                infoLines.push(`종교기부: ${religious.toLocaleString("ko-KR")}원`);
+                infoLines.push(religiousFormula);
+            }
+            if (nonReligious > 0) {
+                infoLines.push(`일반기부: ${nonReligious.toLocaleString("ko-KR")}원`);
+                infoLines.push(nonReligiousFormula);
+            }
+            if (infoLines.length > 0) {
+                infoLines.push(`──────────────`);
+                infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+            }
+            return {
+                id: "5",
+                category: "기부금",
+                type: "세액공제",
+                amount: totalCredit,
+                limit: earnedIncome,
+                status: getStatus(Math.min(1, (political + hometown + disaster + special + stock + religious + nonReligious) / earnedIncome)),
+                thresholdInfo: infoLines.length > 0 ? infoLines.join("\n") : "기부금 내역이 없습니다",
+                maxBenefit: earnedIncome * 0.3,
+                earnedIncome: earnedIncome,
+                donationLimits: {
+                    politicalFund: earnedIncome,
+                    hometownDisaster: 2000000,
+                    specialDonation: earnedIncome,
+                    employeeStock: Math.round(earnedIncome * 0.3),
+                    generalReligious: Math.round(earnedIncome * 0.1),
+                    generalNonReligious: Math.round(earnedIncome * 0.3)
+                }
+            };
+        })(),
+        (()=>{
+            // 연금저축/IRP 계산 및 계산식 생성
+            // 레거시 호환: pensionSavings가 없으면 pension 필드 사용
+            const savingsAmount = deductions?.pensionSavings || deductions?.pension || 0;
+            const irpAmount = deductions?.pensionIRP || 0;
+            // 한도 적용
+            const SAVINGS_LIMIT = 6000000; // 연금저축: 600만원
+            const TOTAL_LIMIT = 9000000; // 연금저축+IRP 합산: 900만원
+            const savingsLimited = Math.min(savingsAmount, SAVINGS_LIMIT);
+            const remainingLimit = Math.max(0, TOTAL_LIMIT - savingsLimited);
+            const irpLimited = Math.min(irpAmount, remainingLimit);
+            // 세액공제액 계산 (12%)
+            const savingsCredit = Math.round(savingsLimited * 0.12);
+            const irpCredit = Math.round(irpLimited * 0.12);
+            const totalCredit = savingsCredit + irpCredit;
+            // thresholdInfo 생성 - 연금저축과 IRP 각각 계산식 표시 (0원이어도 표시)
+            const infoLines = [];
+            // 연금저축 계산식 (항상 표시)
+            if (savingsAmount > SAVINGS_LIMIT) {
+                infoLines.push(`연금저축: ${savingsAmount.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 한도: ${savingsLimited.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`연금저축: ${savingsAmount.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${savingsLimited.toLocaleString("ko-KR")} × 12%\n= ${savingsCredit.toLocaleString("ko-KR")}원`);
+            // 퇴직연금(IRP) 계산식 (항상 표시)
+            if (irpAmount > remainingLimit && remainingLimit > 0) {
+                infoLines.push(`퇴직연금(IRP): ${irpAmount.toLocaleString("ko-KR")}원`);
+                infoLines.push(`→ 한도: ${irpLimited.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`퇴직연금(IRP): ${irpAmount.toLocaleString("ko-KR")}원`);
+            }
+            infoLines.push(`└ ${irpLimited.toLocaleString("ko-KR")} × 12%\n= ${irpCredit.toLocaleString("ko-KR")}원`);
+            // 합계 표시
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+            const totalAmount = savingsAmount + irpAmount;
+            return {
+                id: "6",
+                category: "연금저축/IRP",
+                type: "세액공제",
+                amount: totalCredit,
+                limit: TOTAL_LIMIT,
+                status: getStatus(totalAmount / TOTAL_LIMIT),
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: TOTAL_LIMIT * 0.12
+            };
+        })(),
+        (()=>{
+            // 보험료 계산 및 계산식 생성
+            const insuranceAmount = deductions.insurance || 0;
+            const INSURANCE_LIMIT = 1000000; // 한도: 100만원
+            const limitedAmount = Math.min(insuranceAmount, INSURANCE_LIMIT);
+            const taxCredit = Math.round(limitedAmount * 0.12); // 12% 세액공제
+            // thresholdInfo 생성
+            const infoLines = [];
+            if (insuranceAmount > 0) {
+                infoLines.push(`납입액: ${insuranceAmount.toLocaleString("ko-KR")}원`);
+                if (insuranceAmount > INSURANCE_LIMIT) {
+                    infoLines.push(`→ 한도: ${INSURANCE_LIMIT.toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`└ ${limitedAmount.toLocaleString("ko-KR")} × 12%\n= ${taxCredit.toLocaleString("ko-KR")}원`);
+            }
+            return {
+                id: "7",
+                category: "보험료",
+                type: "세액공제",
+                amount: taxCredit,
+                limit: INSURANCE_LIMIT,
+                status: getStatus(insuranceAmount / INSURANCE_LIMIT),
+                thresholdInfo: infoLines.length > 0 ? infoLines.join("\n") : "보장성 보험: 연 100만원 한도\n세액공제율: 12%",
+                maxBenefit: INSURANCE_LIMIT * 0.12
+            };
+        })(),
+        (()=>{
+            // 자녀 세액공제 계산 및 계산식 생성
+            const childrenOver8 = adminData.family?.childrenOver8 || 0;
+            const birthAdoption = adminData.family?.birthAdoption || "none";
+            // 자녀 세액공제 (만 8세 이상)
+            // 1명: 25만원
+            // 2명: 55만원
+            // 3명 이상: 55만원 + (추가 인원 × 40만원)
+            let childCredit = 0;
+            if (childrenOver8 === 1) {
+                childCredit = 250000; // 1명
+            } else if (childrenOver8 === 2) {
+                childCredit = 550000; // 2명
+            } else if (childrenOver8 >= 3) {
+                childCredit = 550000 + (childrenOver8 - 2) * 400000; // 3명 이상
+            }
+            // 출생·입양 공제
+            let birthAdoptionCredit = 0;
+            let birthAdoptionName = "";
+            switch(birthAdoption){
+                case "first":
+                    birthAdoptionCredit = 300000;
+                    birthAdoptionName = "첫째";
+                    break;
+                case "second":
+                    birthAdoptionCredit = 500000;
+                    birthAdoptionName = "둘째";
+                    break;
+                case "third1":
+                    birthAdoptionCredit = 700000;
+                    birthAdoptionName = "셋째 이상 1명";
+                    break;
+                case "third2":
+                    birthAdoptionCredit = 1400000;
+                    birthAdoptionName = "셋째 이상 2명";
+                    break;
+                case "third3":
+                    birthAdoptionCredit = 2100000;
+                    birthAdoptionName = "셋째 이상 3명";
+                    break;
+            }
+            const totalCredit = childCredit + birthAdoptionCredit;
+            // thresholdInfo 생성 - 계산식 표시
+            const infoLines = [];
+            // 자녀 세액공제 계산식
+            infoLines.push(`자녀 세액공제 (만 8세 이상 ${childrenOver8}명)`);
+            if (childrenOver8 > 0) {
+                if (childrenOver8 === 1) {
+                    infoLines.push(`└ 1명: 250,000원`);
+                } else if (childrenOver8 === 2) {
+                    infoLines.push(`└ 2명: 550,000원`);
+                } else if (childrenOver8 >= 3) {
+                    const thirdPlus = childrenOver8 - 2;
+                    infoLines.push(`└ 2명: 550,000원`);
+                    infoLines.push(`└ 추가 ${thirdPlus}명: ${(thirdPlus * 400000).toLocaleString("ko-KR")}원`);
+                }
+                infoLines.push(`= ${childCredit.toLocaleString("ko-KR")}원`);
+            } else {
+                infoLines.push(`└ 0원`);
+            }
+            // 출생·입양 공제 계산식
+            if (birthAdoption !== "none") {
+                infoLines.push(``);
+                infoLines.push(`출생·입양 공제 (${birthAdoptionName})`);
+                infoLines.push(`└ ${birthAdoptionCredit.toLocaleString("ko-KR")}원`);
+            }
+            // 합계
+            infoLines.push(`──────────────`);
+            infoLines.push(`합계: ${totalCredit.toLocaleString("ko-KR")}원`);
+            return {
+                id: "8",
+                category: "자녀",
+                type: "세액공제",
+                amount: totalCredit,
+                limit: 0,
+                status: childrenOver8 > 0 ? "optimal" : "critical",
+                thresholdInfo: infoLines.join("\n"),
+                maxBenefit: 0,
+                childLimits: {
+                    first: 250000,
+                    second: 550000,
+                    thirdPlus: 400000,
+                    birthFirst: 300000,
+                    birthSecond: 500000,
+                    birthThirdPlus: 700000
+                }
+            };
+        })()
     ];
     return items;
 }
@@ -1696,17 +2283,19 @@ function DashboardPage() {
                                             "4대보험": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$building$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Building$3e$__["Building"],
                                             "신용카드 등 사용금액": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$credit$2d$card$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__CreditCard$3e$__["CreditCard"],
                                             "주택자금(청약저축)": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$house$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Home$3e$__["Home"],
-                                            "주택자금(임차차입금)": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$house$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Home$3e$__["Home"],
-                                            "주택자금(장기주택저당차입금)": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$house$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Home$3e$__["Home"],
+                                            "주택자금(청약저축+임차차입금)": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$house$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Home$3e$__["Home"],
+                                            "주택자금(장기주택저당차입금이자\n상환액)": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$house$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Home$3e$__["Home"],
                                             "월세 세액공제": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$house$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Home$3e$__["Home"],
                                             "의료비": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$heart$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Heart$3e$__["Heart"],
                                             "교육비": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$graduation$2d$cap$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__GraduationCap$3e$__["GraduationCap"],
                                             "기부금": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$gift$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Gift$3e$__["Gift"],
                                             "연금저축/IRP": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$piggy$2d$bank$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__PiggyBank$3e$__["PiggyBank"],
-                                            "보험료": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$building$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Building$3e$__["Building"]
+                                            "보험료": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$building$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Building$3e$__["Building"],
+                                            "자녀": __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$users$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Users$3e$__["Users"]
                                         };
                                         const Icon = iconMap[item.category] || __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$credit$2d$card$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__CreditCard$3e$__["CreditCard"];
-                                        const utilizationRate = item.limit > 0 ? Math.round(item.amount / item.limit * 100) : 0;
+                                        const maxValue = item.maxBenefit || item.limit;
+                                        const utilizationRate = maxValue > 0 ? Math.min(100, Math.round(item.amount / maxValue * 100)) : 0;
                                         return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
                                             className: `border-b-2 border-black hover:bg-gray-50 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-gray-50"}`,
                                             children: [
@@ -1721,31 +2310,31 @@ function DashboardPage() {
                                                                     size: 20
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 546,
+                                                                    lineNumber: 548,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                                lineNumber: 545,
+                                                                lineNumber: 547,
                                                                 columnNumber: 49
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                                className: "font-bold",
+                                                                className: "font-bold whitespace-pre-line",
                                                                 children: item.category
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                                lineNumber: 548,
+                                                                lineNumber: 550,
                                                                 columnNumber: 49
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/dashboard/page.tsx",
-                                                        lineNumber: 544,
+                                                        lineNumber: 546,
                                                         columnNumber: 45
                                                     }, this)
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 543,
+                                                    lineNumber: 545,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1755,51 +2344,151 @@ function DashboardPage() {
                                                         children: item.type
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/page.tsx",
-                                                        lineNumber: 552,
+                                                        lineNumber: 554,
                                                         columnNumber: 45
                                                     }, this)
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 551,
+                                                    lineNumber: 553,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
-                                                    className: "text-right py-3 px-2 sm:px-4 whitespace-nowrap text-sm sm:text-base",
+                                                    className: "text-right py-3 px-2 sm:px-4 text-sm sm:text-base",
                                                     children: [
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                            className: "font-bold",
+                                                            className: "font-bold whitespace-nowrap",
                                                             children: [
                                                                 formatNumber(Math.round(item.amount)),
                                                                 "원"
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 558,
+                                                            lineNumber: 560,
                                                             columnNumber: 45
                                                         }, this),
                                                         item.thresholdInfo && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                                            className: "text-xs text-gray-400 mt-0.5",
+                                                            className: "text-xs text-gray-400 mt-0.5 whitespace-pre-line text-right",
                                                             children: item.thresholdInfo
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 560,
+                                                            lineNumber: 562,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 557,
+                                                    lineNumber: 559,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
-                                                    className: "text-right py-4 px-4 text-gray-500 hidden md:table-cell whitespace-nowrap",
-                                                    children: [
-                                                        formatNumber(item.limit),
-                                                        "원"
-                                                    ]
-                                                }, void 0, true, {
+                                                    className: "text-right py-4 px-4 text-gray-500 hidden md:table-cell whitespace-pre-line",
+                                                    children: item.category === "교육비" ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-xs",
+                                                        children: [
+                                                            "본인: 한도 없음",
+                                                            "\n",
+                                                            "미취학: 1인당 3,000,000원",
+                                                            "\n",
+                                                            "초중고: 1인당 3,000,000원",
+                                                            "\n",
+                                                            "대학: 1인당 9,000,000원"
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "[project]/app/dashboard/page.tsx",
+                                                        lineNumber: 567,
+                                                        columnNumber: 49
+                                                    }, this) : item.category === "의료비" ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-xs",
+                                                        children: [
+                                                            "난임시술비: 한도 없음",
+                                                            "\n",
+                                                            "미숙아·선천성: 한도 없음",
+                                                            "\n",
+                                                            "본인/장애/만65/6세: 한도 없음",
+                                                            "\n",
+                                                            "그 밖의 부양가족: 7,000,000원"
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "[project]/app/dashboard/page.tsx",
+                                                        lineNumber: 569,
+                                                        columnNumber: 49
+                                                    }, this) : item.category === "기부금" && item.donationLimits ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-xs",
+                                                        children: [
+                                                            "정치자금: ",
+                                                            formatNumber(item.donationLimits.politicalFund),
+                                                            "원",
+                                                            "\n",
+                                                            "고향사랑/특별재난: ",
+                                                            formatNumber(item.donationLimits.hometownDisaster),
+                                                            "원",
+                                                            "\n",
+                                                            "특례기부금: ",
+                                                            formatNumber(item.donationLimits.specialDonation),
+                                                            "원",
+                                                            "\n",
+                                                            "우리사주조합: ",
+                                                            formatNumber(item.donationLimits.employeeStock),
+                                                            "원",
+                                                            "\n",
+                                                            "일반기부(종교): ",
+                                                            formatNumber(item.donationLimits.generalReligious),
+                                                            "원",
+                                                            "\n",
+                                                            "일반기부(종교 외): ",
+                                                            formatNumber(item.donationLimits.generalNonReligious),
+                                                            "원"
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "[project]/app/dashboard/page.tsx",
+                                                        lineNumber: 571,
+                                                        columnNumber: 49
+                                                    }, this) : item.category === "자녀" && item.childLimits ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-xs",
+                                                        children: [
+                                                            "자녀 세액공제:",
+                                                            "\n",
+                                                            "1명: ",
+                                                            formatNumber(item.childLimits.first),
+                                                            "원",
+                                                            "\n",
+                                                            "2명: ",
+                                                            formatNumber(item.childLimits.second),
+                                                            "원",
+                                                            "\n",
+                                                            "3명 이상: ",
+                                                            formatNumber(item.childLimits.thirdPlus),
+                                                            "원",
+                                                            "\n",
+                                                            "───",
+                                                            "\n",
+                                                            "출생·입양 공제:",
+                                                            "\n",
+                                                            "첫째: ",
+                                                            formatNumber(item.childLimits.birthFirst),
+                                                            "원",
+                                                            "\n",
+                                                            "둘째: ",
+                                                            formatNumber(item.childLimits.birthSecond),
+                                                            "원",
+                                                            "\n",
+                                                            "셋째 이상: 1인당 ",
+                                                            formatNumber(item.childLimits.birthThirdPlus),
+                                                            "원"
+                                                        ]
+                                                    }, void 0, true, {
+                                                        fileName: "[project]/app/dashboard/page.tsx",
+                                                        lineNumber: 580,
+                                                        columnNumber: 49
+                                                    }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["Fragment"], {
+                                                        children: [
+                                                            formatNumber(item.limit),
+                                                            "원"
+                                                        ]
+                                                    }, void 0, true)
+                                                }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 563,
+                                                    lineNumber: 565,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1816,12 +2505,12 @@ function DashboardPage() {
                                                                     }
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 569,
+                                                                    lineNumber: 598,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             }, void 0, false, {
                                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                                lineNumber: 568,
+                                                                lineNumber: 597,
                                                                 columnNumber: 49
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1832,18 +2521,18 @@ function DashboardPage() {
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                                lineNumber: 574,
+                                                                lineNumber: 603,
                                                                 columnNumber: 49
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/app/dashboard/page.tsx",
-                                                        lineNumber: 567,
+                                                        lineNumber: 596,
                                                         columnNumber: 45
                                                     }, this)
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 566,
+                                                    lineNumber: 595,
                                                     columnNumber: 41
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1851,13 +2540,13 @@ function DashboardPage() {
                                                     children: getStatusBadge(item.status)
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 577,
+                                                    lineNumber: 606,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, item.id, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 538,
+                                            lineNumber: 540,
                                             columnNumber: 37
                                         }, this);
                                     })
@@ -1890,7 +2579,7 @@ function DashboardPage() {
                                             className: "text-neo-cyan flex-shrink-0"
                                         }, void 0, false, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 591,
+                                            lineNumber: 620,
                                             columnNumber: 29
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1900,7 +2589,7 @@ function DashboardPage() {
                                                     children: "전체 공제 활용률"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 593,
+                                                    lineNumber: 622,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1908,19 +2597,19 @@ function DashboardPage() {
                                                     children: "7개 항목 중 2개 최적화 완료"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 594,
+                                                    lineNumber: 623,
                                                     columnNumber: 33
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 592,
+                                            lineNumber: 621,
                                             columnNumber: 29
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/dashboard/page.tsx",
-                                    lineNumber: 590,
+                                    lineNumber: 619,
                                     columnNumber: 25
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1937,7 +2626,7 @@ function DashboardPage() {
                                                             children: "소득공제"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 603,
+                                                            lineNumber: 632,
                                                             columnNumber: 37
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1945,13 +2634,13 @@ function DashboardPage() {
                                                             children: "과세표준 감소"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 604,
+                                                            lineNumber: 633,
                                                             columnNumber: 37
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 602,
+                                                    lineNumber: 631,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1964,7 +2653,7 @@ function DashboardPage() {
                                                                     children: "현재 공제액"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 608,
+                                                                    lineNumber: 637,
                                                                     columnNumber: 41
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1975,13 +2664,13 @@ function DashboardPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 609,
+                                                                    lineNumber: 638,
                                                                     columnNumber: 41
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 607,
+                                                            lineNumber: 636,
                                                             columnNumber: 37
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1992,7 +2681,7 @@ function DashboardPage() {
                                                                     children: "최대 한도"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 612,
+                                                                    lineNumber: 641,
                                                                     columnNumber: 41
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2003,19 +2692,19 @@ function DashboardPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 613,
+                                                                    lineNumber: 642,
                                                                     columnNumber: 41
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 611,
+                                                            lineNumber: 640,
                                                             columnNumber: 37
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 606,
+                                                    lineNumber: 635,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2027,18 +2716,18 @@ function DashboardPage() {
                                                         }
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/page.tsx",
-                                                        lineNumber: 617,
+                                                        lineNumber: 646,
                                                         columnNumber: 37
                                                     }, this)
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 616,
+                                                    lineNumber: 645,
                                                     columnNumber: 33
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 601,
+                                            lineNumber: 630,
                                             columnNumber: 29
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2052,7 +2741,7 @@ function DashboardPage() {
                                                             children: "세액공제"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 629,
+                                                            lineNumber: 658,
                                                             columnNumber: 37
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2060,13 +2749,13 @@ function DashboardPage() {
                                                             children: "납부세액 직접 감소"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 630,
+                                                            lineNumber: 659,
                                                             columnNumber: 37
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 628,
+                                                    lineNumber: 657,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2079,7 +2768,7 @@ function DashboardPage() {
                                                                     children: "현재 공제액"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 634,
+                                                                    lineNumber: 663,
                                                                     columnNumber: 41
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2090,13 +2779,13 @@ function DashboardPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 635,
+                                                                    lineNumber: 664,
                                                                     columnNumber: 41
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 633,
+                                                            lineNumber: 662,
                                                             columnNumber: 37
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2107,7 +2796,7 @@ function DashboardPage() {
                                                                     children: "최대 한도"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 638,
+                                                                    lineNumber: 667,
                                                                     columnNumber: 41
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2118,19 +2807,19 @@ function DashboardPage() {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 639,
+                                                                    lineNumber: 668,
                                                                     columnNumber: 41
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 637,
+                                                            lineNumber: 666,
                                                             columnNumber: 37
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 632,
+                                                    lineNumber: 661,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2142,24 +2831,24 @@ function DashboardPage() {
                                                         }
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/page.tsx",
-                                                        lineNumber: 643,
+                                                        lineNumber: 672,
                                                         columnNumber: 37
                                                     }, this)
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 642,
+                                                    lineNumber: 671,
                                                     columnNumber: 33
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 627,
+                                            lineNumber: 656,
                                             columnNumber: 29
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/dashboard/page.tsx",
-                                    lineNumber: 599,
+                                    lineNumber: 628,
                                     columnNumber: 25
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2173,7 +2862,7 @@ function DashboardPage() {
                                                     children: "전체 합계: "
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 656,
+                                                    lineNumber: 685,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2184,7 +2873,7 @@ function DashboardPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 657,
+                                                    lineNumber: 686,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2192,7 +2881,7 @@ function DashboardPage() {
                                                     children: " / "
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 658,
+                                                    lineNumber: 687,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2203,13 +2892,13 @@ function DashboardPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 659,
+                                                    lineNumber: 688,
                                                     columnNumber: 33
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 655,
+                                            lineNumber: 684,
                                             columnNumber: 29
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2219,51 +2908,51 @@ function DashboardPage() {
                                                     className: "w-3 h-3 bg-neo-cyan border border-black"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 662,
+                                                    lineNumber: 691,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                     children: "소득공제"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 663,
+                                                    lineNumber: 692,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                     className: "w-3 h-3 bg-neo-orange border border-black ml-2"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 664,
+                                                    lineNumber: 693,
                                                     columnNumber: 33
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                     children: "세액공제"
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 665,
+                                                    lineNumber: 694,
                                                     columnNumber: 33
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 661,
+                                            lineNumber: 690,
                                             columnNumber: 29
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/dashboard/page.tsx",
-                                    lineNumber: 654,
+                                    lineNumber: 683,
                                     columnNumber: 25
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/dashboard/page.tsx",
-                            lineNumber: 589,
+                            lineNumber: 618,
                             columnNumber: 21
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/app/dashboard/page.tsx",
-                        lineNumber: 588,
+                        lineNumber: 617,
                         columnNumber: 17
                     }, this)
                 ]
@@ -2286,7 +2975,7 @@ function DashboardPage() {
                                         className: "text-neo-yellow"
                                     }, void 0, false, {
                                         fileName: "[project]/app/dashboard/page.tsx",
-                                        lineNumber: 676,
+                                        lineNumber: 705,
                                         columnNumber: 25
                                     }, this),
                                     "AI 절세 추천",
@@ -2299,13 +2988,13 @@ function DashboardPage() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/dashboard/page.tsx",
-                                        lineNumber: 678,
+                                        lineNumber: 707,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/dashboard/page.tsx",
-                                lineNumber: 675,
+                                lineNumber: 704,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2319,20 +3008,20 @@ function DashboardPage() {
                                                 className: "mx-auto mb-2 text-gray-300"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                lineNumber: 685,
+                                                lineNumber: 714,
                                                 columnNumber: 33
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                                 children: "계산기에서 데이터를 입력하면 AI 추천을 받을 수 있습니다."
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                lineNumber: 686,
+                                                lineNumber: 715,
                                                 columnNumber: 33
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/dashboard/page.tsx",
-                                        lineNumber: 684,
+                                        lineNumber: 713,
                                         columnNumber: 29
                                     }, this) : aiRecommendations.map((rec)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                             className: "border-2 border-black p-4 hover:translate-x-1 hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_#000] transition-all cursor-pointer bg-white",
@@ -2344,7 +3033,7 @@ function DashboardPage() {
                                                             type: rec.priority
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 695,
+                                                            lineNumber: 724,
                                                             columnNumber: 41
                                                         }, this),
                                                         rec.potentialSaving > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2356,13 +3045,13 @@ function DashboardPage() {
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 697,
+                                                            lineNumber: 726,
                                                             columnNumber: 45
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 694,
+                                                    lineNumber: 723,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h4", {
@@ -2370,7 +3059,7 @@ function DashboardPage() {
                                                     children: rec.message
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 702,
+                                                    lineNumber: 731,
                                                     columnNumber: 37
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2378,7 +3067,7 @@ function DashboardPage() {
                                                     children: rec.detail
                                                 }, void 0, false, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 705,
+                                                    lineNumber: 734,
                                                     columnNumber: 37
                                                 }, this),
                                                 rec.action && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2389,13 +3078,13 @@ function DashboardPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 707,
+                                                    lineNumber: 736,
                                                     columnNumber: 41
                                                 }, this)
                                             ]
                                         }, rec.id, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 690,
+                                            lineNumber: 719,
                                             columnNumber: 33
                                         }, this)),
                                     !hasUserData && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
@@ -2405,24 +3094,24 @@ function DashboardPage() {
                                             children: "계산기로 이동 →"
                                         }, void 0, false, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 716,
+                                            lineNumber: 745,
                                             columnNumber: 33
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/app/dashboard/page.tsx",
-                                        lineNumber: 715,
+                                        lineNumber: 744,
                                         columnNumber: 29
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/dashboard/page.tsx",
-                                lineNumber: 682,
+                                lineNumber: 711,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/dashboard/page.tsx",
-                        lineNumber: 674,
+                        lineNumber: 703,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2439,14 +3128,14 @@ function DashboardPage() {
                                                 className: "text-neo-yellow"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                lineNumber: 728,
+                                                lineNumber: 757,
                                                 columnNumber: 29
                                             }, this),
                                             "연말정산 뉴스"
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/dashboard/page.tsx",
-                                        lineNumber: 727,
+                                        lineNumber: 756,
                                         columnNumber: 25
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2459,14 +3148,14 @@ function DashboardPage() {
                                                         className: "w-2 h-2 bg-neo-cyan rounded-full animate-pulse"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/dashboard/page.tsx",
-                                                        lineNumber: 733,
+                                                        lineNumber: 762,
                                                         columnNumber: 33
                                                     }, this),
                                                     "3시간마다 업데이트"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                lineNumber: 732,
+                                                lineNumber: 761,
                                                 columnNumber: 29
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -2475,19 +3164,19 @@ function DashboardPage() {
                                                 children: showAllNews ? '접기 -' : '더보기 +'
                                             }, void 0, false, {
                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                lineNumber: 736,
+                                                lineNumber: 765,
                                                 columnNumber: 29
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/dashboard/page.tsx",
-                                        lineNumber: 731,
+                                        lineNumber: 760,
                                         columnNumber: 25
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/app/dashboard/page.tsx",
-                                lineNumber: 726,
+                                lineNumber: 755,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2500,7 +3189,7 @@ function DashboardPage() {
                                             className: "text-neo-yellow animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 747,
+                                            lineNumber: 776,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2508,13 +3197,13 @@ function DashboardPage() {
                                             children: "뉴스를 불러오는 중..."
                                         }, void 0, false, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 748,
+                                            lineNumber: 777,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/dashboard/page.tsx",
-                                    lineNumber: 746,
+                                    lineNumber: 775,
                                     columnNumber: 29
                                 }, this) : newsArticles.length > 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["Fragment"], {
                                     children: [
@@ -2545,7 +3234,7 @@ function DashboardPage() {
                                                                             children: "NEW"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                                            lineNumber: 775,
+                                                                            lineNumber: 804,
                                                                             columnNumber: 61
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2553,7 +3242,7 @@ function DashboardPage() {
                                                                             children: article.source
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                                            lineNumber: 777,
+                                                                            lineNumber: 806,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2561,7 +3250,7 @@ function DashboardPage() {
                                                                             children: "•"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                                            lineNumber: 778,
+                                                                            lineNumber: 807,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2569,13 +3258,13 @@ function DashboardPage() {
                                                                             children: article.time
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                                            lineNumber: 779,
+                                                                            lineNumber: 808,
                                                                             columnNumber: 57
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 773,
+                                                                    lineNumber: 802,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h4", {
@@ -2583,13 +3272,13 @@ function DashboardPage() {
                                                                     children: article.title
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 781,
+                                                                    lineNumber: 810,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 772,
+                                                            lineNumber: 801,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(ArrowRight, {
@@ -2597,18 +3286,18 @@ function DashboardPage() {
                                                             className: "text-gray-500 group-hover:text-neo-yellow transition-colors flex-shrink-0 mt-1"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 785,
+                                                            lineNumber: 814,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 771,
+                                                    lineNumber: 800,
                                                     columnNumber: 45
                                                 }, this)
                                             }, article.id, false, {
                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                lineNumber: 764,
+                                                lineNumber: 793,
                                                 columnNumber: 41
                                             }, this)),
                                         showAllNews && newsArticles.filter((article)=>{
@@ -2633,7 +3322,7 @@ function DashboardPage() {
                                                                             children: article.source
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                                            lineNumber: 807,
+                                                                            lineNumber: 836,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2641,7 +3330,7 @@ function DashboardPage() {
                                                                             children: "•"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                                            lineNumber: 808,
+                                                                            lineNumber: 837,
                                                                             columnNumber: 57
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -2649,13 +3338,13 @@ function DashboardPage() {
                                                                             children: article.time
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                                            lineNumber: 809,
+                                                                            lineNumber: 838,
                                                                             columnNumber: 57
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 806,
+                                                                    lineNumber: 835,
                                                                     columnNumber: 53
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h4", {
@@ -2663,13 +3352,13 @@ function DashboardPage() {
                                                                     children: article.title
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                                    lineNumber: 811,
+                                                                    lineNumber: 840,
                                                                     columnNumber: 53
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 805,
+                                                            lineNumber: 834,
                                                             columnNumber: 49
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(ArrowRight, {
@@ -2677,18 +3366,18 @@ function DashboardPage() {
                                                             className: "text-gray-500 group-hover:text-neo-yellow transition-colors flex-shrink-0 mt-1"
                                                         }, void 0, false, {
                                                             fileName: "[project]/app/dashboard/page.tsx",
-                                                            lineNumber: 815,
+                                                            lineNumber: 844,
                                                             columnNumber: 49
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 804,
+                                                    lineNumber: 833,
                                                     columnNumber: 45
                                                 }, this)
                                             }, article.id, false, {
                                                 fileName: "[project]/app/dashboard/page.tsx",
-                                                lineNumber: 797,
+                                                lineNumber: 826,
                                                 columnNumber: 41
                                             }, this))
                                     ]
@@ -2697,24 +3386,24 @@ function DashboardPage() {
                                     children: "뉴스를 불러올 수 없습니다."
                                 }, void 0, false, {
                                     fileName: "[project]/app/dashboard/page.tsx",
-                                    lineNumber: 821,
+                                    lineNumber: 850,
                                     columnNumber: 29
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/dashboard/page.tsx",
-                                lineNumber: 744,
+                                lineNumber: 773,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/app/dashboard/page.tsx",
-                        lineNumber: 725,
+                        lineNumber: 754,
                         columnNumber: 17
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/app/dashboard/page.tsx",
-                lineNumber: 672,
+                lineNumber: 701,
                 columnNumber: 13
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2730,7 +3419,7 @@ function DashboardPage() {
                                     className: "text-neo-black"
                                 }, void 0, false, {
                                     fileName: "[project]/app/dashboard/page.tsx",
-                                    lineNumber: 833,
+                                    lineNumber: 862,
                                     columnNumber: 25
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2740,7 +3429,7 @@ function DashboardPage() {
                                             children: "지금 바로 절세 최적화를 시작하세요!"
                                         }, void 0, false, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 835,
+                                            lineNumber: 864,
                                             columnNumber: 29
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2755,26 +3444,26 @@ function DashboardPage() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/app/dashboard/page.tsx",
-                                                    lineNumber: 836,
+                                                    lineNumber: 865,
                                                     columnNumber: 87
                                                 }, this),
                                                 " 추가 환급 가능"
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/app/dashboard/page.tsx",
-                                            lineNumber: 836,
+                                            lineNumber: 865,
                                             columnNumber: 29
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/app/dashboard/page.tsx",
-                                    lineNumber: 834,
+                                    lineNumber: 863,
                                     columnNumber: 25
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/app/dashboard/page.tsx",
-                            lineNumber: 832,
+                            lineNumber: 861,
                             columnNumber: 21
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$client$2f$app$2d$dir$2f$link$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
@@ -2784,23 +3473,23 @@ function DashboardPage() {
                                 children: "절세 시뮬레이션 시작"
                             }, void 0, false, {
                                 fileName: "[project]/app/dashboard/page.tsx",
-                                lineNumber: 840,
+                                lineNumber: 869,
                                 columnNumber: 25
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/app/dashboard/page.tsx",
-                            lineNumber: 839,
+                            lineNumber: 868,
                             columnNumber: 21
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/app/dashboard/page.tsx",
-                    lineNumber: 831,
+                    lineNumber: 860,
                     columnNumber: 17
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/app/dashboard/page.tsx",
-                lineNumber: 830,
+                lineNumber: 859,
                 columnNumber: 13
             }, this)
         ]

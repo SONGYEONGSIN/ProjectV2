@@ -100,8 +100,19 @@ export default function AdminPage() {
     const [cardExcelFile, setCardExcelFile] = useState<File | null>(null);
     const [isCardExcelDragging, setIsCardExcelDragging] = useState(false);
     const [cardType, setCardType] = useState<"credit" | "debit" | "cash">("credit");
-    const [cardExcelPreview, setCardExcelPreview] = useState<{ date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded" }[]>([]);
+    const [cardExcelPreview, setCardExcelPreview] = useState<{ date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded", bizNo?: string }[]>([]);
     const [excludedCount, setExcludedCount] = useState(0);
+
+    // 전통시장 불확실 매칭 확인 상태
+    const [uncertainMarketItems, setUncertainMarketItems] = useState<{
+        merchantName: string;
+        matchedMarketName: string;
+        belongsTo: string;
+        address: string;
+        matchRatio: number;
+        candidates?: Array<{ marketName: string; belongsTo: string; address: string }>;
+    }[]>([]);
+    const [showMarketConfirmModal, setShowMarketConfirmModal] = useState(false);
 
     // 지출 항목 상태
     const [selectedSpendingMonth, setSelectedSpendingMonth] = useState(1); // 지출 데이터 월 선택
@@ -657,7 +668,15 @@ export default function AdminPage() {
                     h.includes("업종명") || h.includes("카테고리")
                 );
 
-                console.log("Detected columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol, "cancel:", cancelCol, "approval:", approvalCol, "category:", categoryCol);
+                // 사업자등록번호 열
+                let bizNoCol = headers.findIndex(h =>
+                    h.includes("사업자등록번호") || h.includes("사업자번호") ||
+                    h.includes("사업자") || h.includes("등록번호")
+                );
+                // 사업자 열이 가맹점 열과 동일하면 제외 ("사업자" 키워드가 가맹점 열에도 포함될 수 있음)
+                if (bizNoCol === merchantCol) bizNoCol = -1;
+
+                console.log("Detected columns - date:", dateCol, "merchant:", merchantCol, "amount:", amountCol, "cancel:", cancelCol, "approval:", approvalCol, "category:", categoryCol, "bizNo:", bizNoCol);
 
                 // 열을 찾지 못한 경우 스마트 추론
                 if (dateCol === -1 || merchantCol === -1 || amountCol === -1) {
@@ -748,8 +767,17 @@ export default function AdminPage() {
 
                 console.log("Cancelled approvals:", cancelledApprovals.size);
 
+                // [주석처리] 사업자등록번호 캐시 로드 - 추후 적용 여부 결정
+                // const BIZ_CACHE_KEY = "taxai_biz_cache";
+                // let bizCache: { [bizNo: string]: "medical" | "market" | "card" | "transport" | "insurance" | "culture" } = {};
+                // try {
+                //     const cached = localStorage.getItem(BIZ_CACHE_KEY);
+                //     if (cached) bizCache = JSON.parse(cached);
+                // } catch { /* empty */ }
+                // let bizCacheHitCount = 0;
+
                 // 데이터 파싱 및 필터링
-                const parsedData: { date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded", approvalNum: string }[] = [];
+                const parsedData: { date: string, merchant: string, amount: number, excluded: boolean, category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded", approvalNum: string, bizNo?: string }[] = [];
                 let excludedCnt = 0;
                 let skippedCnt = 0;
 
@@ -803,6 +831,16 @@ export default function AdminPage() {
                     }
 
                     const approvalNum = String(row[approvalCol] || "");
+
+                    // 사업자등록번호 추출 및 정규화
+                    let bizNo: string | undefined;
+                    if (bizNoCol >= 0) {
+                        const rawBizNo = String(row[bizNoCol] || "").replace(/[-\s]/g, "");
+                        // 10자리 숫자인 경우만 유효한 사업자등록번호
+                        if (/^\d{10}$/.test(rawBizNo)) {
+                            bizNo = rawBizNo;
+                        }
+                    }
 
                     // 빈 행 스킵
                     if (!date && !merchant && amount === 0) {
@@ -886,12 +924,18 @@ export default function AdminPage() {
                     // 전통시장은 2차 API 검증으로만 분류됨
                     let category: "card" | "transport" | "insurance" | "medical" | "market" | "culture" | "excluded" = "card";
                     if (isExcluded) category = "excluded";
+                    // [주석처리] 캐시 히트 로직 - 추후 적용 여부 결정
+                    // else if (bizNo && bizCache[bizNo]) {
+                    //     category = bizCache[bizNo];
+                    //     bizCacheHitCount++;
+                    //     console.log(`📋 캐시 히트: ${merchant} (${bizNo}) → ${category}`);
+                    // }
                     else if (isTransport || isTransportFromCategory) category = "transport";
                     else if (isInsurance) category = "insurance";
                     else if (isMedical) category = "medical";
                     else if (isCultureSports) category = "culture";
 
-                    console.log("분류 결과:", merchant, "->", category);
+                    console.log("분류 결과:", merchant, bizNo ? `(${bizNo})` : "", "->", category);
 
 
                     parsedData.push({
@@ -900,11 +944,82 @@ export default function AdminPage() {
                         amount,
                         excluded: isExcluded,
                         category,
-                        approvalNum
+                        approvalNum,
+                        bizNo
                     });
                 });
 
-                console.log("Parsed data count:", parsedData.length, "Excluded:", excludedCnt, "Skipped:", skippedCnt);
+                const bizNoCount = parsedData.filter(d => d.bizNo).length;
+                console.log("Parsed data count:", parsedData.length, "Excluded:", excludedCnt, "Skipped:", skippedCnt, "BizNo:", bizNoCount);
+
+                // 📋 국세청 사업자등록번호 상태 조회 (면세사업자 판별)
+                const checkBizStatus = async () => {
+                    // bizNo가 있고 아직 미분류(card)인 항목만 조회
+                    const uncachedBizItems = parsedData.filter(item =>
+                        item.bizNo && item.category === "card"
+                    );
+
+                    // 중복 제거된 사업자번호 목록
+                    const uniqueBizNos = [...new Set(uncachedBizItems.map(item => item.bizNo!))];
+
+                    if (uniqueBizNos.length === 0) {
+                        console.log("📋 국세청 조회: 조회할 사업자번호 없음 (전체 캐시 히트)");
+                        return;
+                    }
+
+                    console.log(`📋 국세청 사업자 상태 조회 시작: ${uniqueBizNos.length}개 사업자번호`);
+
+                    try {
+                        const response = await fetch("/api/biz-check", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ bizNumbers: uniqueBizNos })
+                        });
+
+                        if (!response.ok) {
+                            console.warn("📋 국세청 API 호출 실패:", response.status);
+                            return;
+                        }
+
+                        const result = await response.json();
+                        console.log("📋 국세청 API 응답:", result);
+
+                        // 면세사업자 판별 → 의료비 키워드와 조합하여 의료기관 판정
+                        let reclassifiedCount = 0;
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        result.results?.forEach((r: any) => {
+                            if (r.isTaxFree) {
+                                // 면세사업자인 항목들을 찾아서 의료비로 재분류
+                                parsedData.forEach(item => {
+                                    if (item.bizNo === r.bizNo && item.category === "card") {
+                                        const merchantLower = item.merchant.toLowerCase();
+                                        // 면세 + 의료 키워드 = 의료비 확정
+                                        const medicalHint = MEDICAL_KEYWORDS.some(kw =>
+                                            merchantLower.includes(kw.toLowerCase())
+                                        );
+                                        if (medicalHint) {
+                                            item.category = "medical";
+                                            reclassifiedCount++;
+                                            console.log(`✅ 면세사업자+의료키워드 → 의료비: ${item.merchant} (${r.bizNo})`);
+                                        } else {
+                                            // 면세사업자이지만 의료 키워드 없음 → 가맹점명 API에서 추가 판별 예정
+                                            console.log(`📋 면세사업자 (미분류): ${item.merchant} (${r.bizNo}) - ${r.taxType}`);
+                                        }
+                                    }
+                                });
+                            }
+                        });
+
+                        if (reclassifiedCount > 0) {
+                            showNotification("success",
+                                `📋 국세청 검증: ${reclassifiedCount}개 의료기관 확인 (면세사업자)`
+                            );
+                            setCardExcelPreview([...parsedData]);
+                        }
+                    } catch (error) {
+                        console.error("📋 국세청 API 오류:", error);
+                    }
+                };
 
                 // 🏥 약국 API 2차 검증 - 모든 가맹점 API 기반 검증 (키워드 필터 없음)
                 const checkPharmacyApi = async () => {
@@ -1054,17 +1169,45 @@ export default function AdminPage() {
 
                         let verifiedCount = 0;
                         let reclassifiedCount = 0;
-                        result.results?.forEach((r: { name: string; isMarket: boolean; reason?: string; marketName?: string }) => {
+                        const newUncertainItems: typeof uncertainMarketItems = [];
+
+                        result.results?.forEach((r: {
+                            name: string;
+                            isMarket: boolean;
+                            reason?: string;
+                            marketName?: string;
+                            belongsTo?: string;
+                            address?: string;
+                            confidence?: "confirmed" | "uncertain";
+                            matchRatio?: number;
+                            candidates?: Array<{ marketName: string; belongsTo: string; address: string }>;
+                        }) => {
                             const item = parsedData.find(p => p.merchant === r.name);
-                            if (r.isMarket) {
+
+                            if (r.isMarket && r.confidence === "confirmed") {
                                 verifiedCount++;
-                                if (item && item.category !== "market") {
-                                    const prevCategory = item.category;
+                                // 이미 의료비, 교통비 등으로 분류된 항목은 보존 (card만 재분류)
+                                if (item && item.category === "card") {
                                     item.category = "market";
                                     reclassifiedCount++;
-                                    console.log(`✅ 전통시장 API 검증 → 전통시장 재분류: ${r.name} (${prevCategory} → market, 시장명: ${r.marketName})`);
-                                } else {
+                                    console.log(`✅ 전통시장 API 검증 → 전통시장 재분류: ${r.name} (card → market, 시장명: ${r.marketName})`);
+                                } else if (item && item.category === "market") {
                                     console.log(`✅ 전통시장 API 검증 확인: ${r.name} (이미 전통시장, 시장명: ${r.marketName})`);
+                                } else if (item) {
+                                    console.log(`ℹ️ 전통시장 API 매칭되었으나 기존 분류 유지: ${r.name} (${item.category}, 시장명: ${r.marketName})`);
+                                }
+                            } else if (r.reason === "api_uncertain" && r.confidence === "uncertain") {
+                                // 불확실 매칭 - card인 경우만 사용자 확인 요청
+                                if (item && item.category === "card") {
+                                    console.log(`❓ 전통시장 API 불확실 매칭: ${r.name} → ${r.marketName} (${r.belongsTo}), 매칭률: ${((r.matchRatio || 0) * 100).toFixed(0)}%`);
+                                    newUncertainItems.push({
+                                        merchantName: r.name,
+                                        matchedMarketName: r.marketName || "",
+                                        belongsTo: r.belongsTo || "",
+                                        address: r.address || "",
+                                        matchRatio: r.matchRatio || 0,
+                                        candidates: r.candidates,
+                                    });
                                 }
                             }
                         });
@@ -1072,22 +1215,54 @@ export default function AdminPage() {
                         if (verifiedCount > 0 || reclassifiedCount > 0) {
                             showNotification("success",
                                 `🏪 전통시장 API 검증: ${verifiedCount}개 전통시장 확인` +
-                                (reclassifiedCount > 0 ? `, ${reclassifiedCount}개 재분류` : "")
+                                (reclassifiedCount > 0 ? `, ${reclassifiedCount}개 재분류` : "") +
+                                (newUncertainItems.length > 0 ? `, ${newUncertainItems.length}개 확인 필요` : "")
                             );
                         }
 
                         if (reclassifiedCount > 0) {
                             setCardExcelPreview([...parsedData]);
                         }
+
+                        // 불확실 매칭이 있으면 확인 모달 표시
+                        if (newUncertainItems.length > 0) {
+                            setUncertainMarketItems(newUncertainItems);
+                            setShowMarketConfirmModal(true);
+                        }
                     } catch (error) {
                         console.error("🏪 전통시장 API 오류:", error);
                     }
                 };
 
-                // 배치 API 호출 (비동기)
-                checkPharmacyApi();
-                checkHospitalApi();
-                checkMarketApi();
+                // [주석처리] 사업자등록번호 캐시 저장 함수 - 추후 적용 여부 결정
+                // const saveBizCache = () => {
+                //     try {
+                //         let updatedCount = 0;
+                //         parsedData.forEach(item => {
+                //             if (item.bizNo && item.category !== "excluded" && item.category !== "card") {
+                //                 if (!bizCache[item.bizNo] || bizCache[item.bizNo] !== item.category) {
+                //                     bizCache[item.bizNo] = item.category;
+                //                     updatedCount++;
+                //                 }
+                //             }
+                //         });
+                //         if (updatedCount > 0) {
+                //             localStorage.setItem(BIZ_CACHE_KEY, JSON.stringify(bizCache));
+                //             console.log(`📋 사업자번호 캐시 업데이트: ${updatedCount}건 저장 (총 ${Object.keys(bizCache).length}건)`);
+                //         }
+                //     } catch (e) {
+                //         console.error("캐시 저장 오류:", e);
+                //     }
+                // };
+
+                // 배치 API 호출 (비동기) → 국세청 먼저 → 나머지 병렬
+                checkBizStatus().then(() =>
+                    Promise.all([
+                        checkPharmacyApi(),
+                        checkHospitalApi(),
+                        checkMarketApi()
+                    ])
+                );
 
                 // 디버깅: 카테고리별 합계 출력
                 const cardTotal = parsedData.filter(i => i.category === "card").reduce((s, i) => s + i.amount, 0);
@@ -2834,6 +3009,100 @@ export default function AdminPage() {
                                     setSelectedItemDetails(null);
                                 }}
                                 className="px-4 py-2 font-bold border-2 border-black bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                            >
+                                닫기
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* 전통시장 불확실 매칭 확인 모달 */}
+            {showMarketConfirmModal && uncertainMarketItems.length > 0 && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80">
+                    <div className="bg-white border-[3px] border-black p-6 max-w-2xl w-full mx-4 shadow-[8px_8px_0px_0px_#000] max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b-2 border-black">
+                            <h3 className="text-xl font-black">🏪 전통시장 확인</h3>
+                            <button
+                                onClick={() => {
+                                    setShowMarketConfirmModal(false);
+                                    setUncertainMarketItems([]);
+                                }}
+                                className="p-2 border-2 border-black bg-white shadow-[2px_2px_0px_0px_#000] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_#000] transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-gray-600 mb-4">
+                            아래 가맹점이 전통시장 DB에서 유사한 이름으로 검색되었습니다.<br />
+                            전통시장으로 분류할 항목을 선택해주세요.
+                        </p>
+
+                        <div className="space-y-3">
+                            {uncertainMarketItems.map((item, idx) => (
+                                <div key={idx} className="border-2 border-black p-3 bg-yellow-50">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex-1">
+                                            <p className="font-bold text-base">{item.merchantName}</p>
+                                            <p className="text-sm text-gray-500 mt-1">
+                                                🔍 유사 매칭: <span className="font-semibold text-black">{item.matchedMarketName}</span>
+                                            </p>
+                                            <p className="text-xs text-gray-400">
+                                                📍 {item.belongsTo} ({item.address}) · 매칭률 {(item.matchRatio * 100).toFixed(0)}%
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 mt-2">
+                                        <button
+                                            onClick={() => {
+                                                // 전통시장으로 분류
+                                                setCardExcelPreview(prev => {
+                                                    const updated = [...prev];
+                                                    const target = updated.find(p => p.merchant === item.merchantName);
+                                                    if (target && target.category === "card") {
+                                                        target.category = "market";
+                                                    }
+                                                    return updated;
+                                                });
+                                                // 목록에서 제거
+                                                setUncertainMarketItems(prev => prev.filter((_, i) => i !== idx));
+                                                showNotification("success", `🏪 ${item.merchantName} → 전통시장으로 분류`);
+                                            }}
+                                            className="flex-1 py-2 px-3 font-bold text-sm border-2 border-black bg-neo-green shadow-[3px_3px_0px_0px_#000] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                                        >
+                                            ✅ 전통시장 맞음
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                // 목록에서 제거 (card로 유지)
+                                                setUncertainMarketItems(prev => prev.filter((_, i) => i !== idx));
+                                                console.log(`❌ 사용자 거부: ${item.merchantName} → 전통시장 아님`);
+                                            }}
+                                            className="flex-1 py-2 px-3 font-bold text-sm border-2 border-black bg-gray-200 shadow-[3px_3px_0px_0px_#000] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
+                                        >
+                                            ❌ 아님
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {uncertainMarketItems.length === 0 && (
+                            <div className="text-center py-8 text-gray-400">
+                                <CheckCircle size={48} className="mx-auto mb-2 text-green-500" />
+                                <p className="font-bold">모든 항목 처리 완료!</p>
+                            </div>
+                        )}
+
+                        <div className="flex justify-end mt-4 pt-4 border-t-2 border-black">
+                            <button
+                                onClick={() => {
+                                    setShowMarketConfirmModal(false);
+                                    setUncertainMarketItems([]);
+                                }}
+                                className="px-6 py-2 font-bold border-2 border-black bg-white shadow-[3px_3px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] transition-all"
                             >
                                 닫기
                             </button>

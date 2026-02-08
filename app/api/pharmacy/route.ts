@@ -171,13 +171,42 @@ async function checkPharmacyByApi(name: string): Promise<{ name: string; isPharm
 
         const items = data.response?.body?.items?.item;
         const pharmacyList = Array.isArray(items) ? items : [items];
-        const firstMatch = pharmacyList[0];
+
+        // 검색 결과가 실제로 입력 가맹점명과 일치하는지 확인
+        const normalizedInput = name.replace(/[\s_]/g, "").toLowerCase();
+        const normalizedSearch = searchName.toLowerCase();
+
+        const matchedPharmacy = pharmacyList.find(p => {
+            if (!p?.yadmNm) return false;
+            const normalizedApi = p.yadmNm.replace(/\s+/g, "").toLowerCase();
+
+            if (normalizedApi.length < 3) return false;
+            if (normalizedInput === normalizedApi) return true;
+
+            // 전체 이름 기준 포함 관계만 확인 (검색어 기준 X)
+            const inputContainsApi = normalizedInput.includes(normalizedApi);
+            const apiContainsInput = normalizedApi.includes(normalizedInput);
+
+            if (!inputContainsApi && !apiContainsInput) return false;
+
+            // 입력 가맹점명에 약국/의료 키워드가 있어야만 부분 매칭 허용
+            const pharmacyKw = ["약국", "pharmacy", "팜", "병원", "의원", "클리닉", "의료"];
+            const inputHasPharmacyKw = pharmacyKw.some(k => normalizedInput.includes(k));
+            if (!inputHasPharmacyKw) return false;
+
+            return true;
+        });
+
+        if (!matchedPharmacy) {
+            console.log(`[Pharmacy API] "${name}" → 검색 결과 있으나 이름 불일치 (결과: ${pharmacyList.map(p => p?.yadmNm).join(", ")})`);
+            return { name, isPharmacy: false, reason: "api_name_mismatch" };
+        }
 
         return {
             name,
             isPharmacy: true,
             reason: "api_confirmed",
-            pharmacyName: firstMatch?.yadmNm
+            pharmacyName: matchedPharmacy.yadmNm
         };
 
     } catch (error) {
@@ -190,7 +219,15 @@ async function checkPharmacyByApi(name: string): Promise<{ name: string; isPharm
  * 가맹점명에서 API 검색용 이름 추출
  */
 function extractSearchName(merchant: string): string {
-    const parts = merchant.replace(/_/g, " ").trim().split(/\s+/);
+    let cleaned = merchant.replace(/_/g, " ").trim();
+
+    // 법인 접두/접미사 제거 (주식회사, (주), 유한회사 등)
+    cleaned = cleaned.replace(/^(주식회사|유한회사|합자회사|합명회사|사단법인|재단법인|사회적협동조합|협동조합|의료법인)\s*/g, "").trim();
+    cleaned = cleaned.replace(/\s*(주식회사|유한회사|합자회사|합명회사)$/g, "").trim();
+    cleaned = cleaned.replace(/^\(주\)\s*/g, "").trim();
+    cleaned = cleaned.replace(/\s*\(주\)$/g, "").trim();
+
+    const parts = cleaned.split(/\s+/);
     if (parts.length > 1 && parts[0].length <= 2) {
         return parts.slice(0, 2).join("");
     }

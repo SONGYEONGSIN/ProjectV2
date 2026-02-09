@@ -834,7 +834,8 @@ export default function AdminPage() {
 
                     // 사업자등록번호 추출 및 정규화
                     let bizNo: string | undefined;
-                    if (bizNoCol >= 0) {
+                    let hasBizNoColumn = bizNoCol >= 0;
+                    if (hasBizNoColumn) {
                         const rawBizNo = String(row[bizNoCol] || "").replace(/[-\s]/g, "");
                         // 10자리 숫자인 경우만 유효한 사업자등록번호
                         if (/^\d{10}$/.test(rawBizNo)) {
@@ -914,9 +915,17 @@ export default function AdminPage() {
                         categoryValue.includes("택시") || categoryValue.includes("철도");
 
                     // 제외 키워드 체크 (세금, 공과금, 통신비 등)
-                    const isExcluded = EXCLUDED_KEYWORDS.some(keyword =>
+                    const isExcludedByKeyword = EXCLUDED_KEYWORDS.some(keyword =>
                         merchantLower.includes(keyword.toLowerCase())
                     );
+
+                    // 사업자번호가 없는 항목도 제외 (사업자번호 열이 있는 경우)
+                    const isExcludedByNoBizNo = hasBizNoColumn && !bizNo;
+                    if (isExcludedByNoBizNo && !isExcludedByKeyword) {
+                        console.log("❌ 사업자번호 없음 → 제외:", merchant);
+                    }
+
+                    const isExcluded = isExcludedByKeyword || isExcludedByNoBizNo;
 
                     if (isExcluded) excludedCnt++;
 
@@ -2069,7 +2078,7 @@ export default function AdminPage() {
                             <p className="text-green-600">🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류</p>
                             <p className="text-orange-600">🏪 전통시장: 전통시장, 재래시장 등 → 전통시장 항목으로 분류</p>
                             <p className="text-pink-600">🎭 문화체육: 서점, 도서, 영화관, 헬스 등 → 문화체육 항목으로 분류</p>
-                            <p className="text-red-500">❌ 제외: 세금, 공과금, 통신비, 도로통행료 → 공제 불가</p>
+                            <p className="text-red-500">❌ 제외: 세금, 공과금, 통신비, 도로통행료, 사업자번호 없는 항목 → 공제 불가</p>
                             <p className="text-gray-500 mt-1">취소된 거래는 자동으로 제외됩니다.</p>
                         </div>
 
@@ -2922,7 +2931,7 @@ export default function AdminPage() {
                             <p className="text-teal-600">🏥 의료비: 병원, 의원, 약국 등 → 의료비 항목으로 분류</p>
                             <p className="text-orange-600">🏪 전통시장: 전통시장, 재래시장 등 → 전통시장 항목으로 분류</p>
                             <p className="text-pink-600">🎭 문화체육: 서점, 도서, 영화관, 헬스 등 → 문화체육 항목으로 분류</p>
-                            <p className="text-red-500">❌ 제외: 세금, 공과금, 통신비, 도로통행료 → 공제 불가</p>
+                            <p className="text-red-500">❌ 제외: 세금, 공과금, 통신비, 도로통행료, 사업자번호 없는 항목 → 공제 불가</p>
                             <p className="text-gray-500 mt-1">취소된 거래는 자동으로 제외됩니다.</p>
                         </div>
 

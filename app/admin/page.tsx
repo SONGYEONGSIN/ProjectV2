@@ -2470,17 +2470,7 @@ export default function AdminPage() {
                                     onChange={(e) => setFamilyData(prev => ({ ...prev, children: Math.max(0, parseInt(e.target.value) || 0) }))}
                                 />
                             </div>
-                            <div>
-                                <label className="block font-bold mb-2">만 8세 이상 자녀 수 <span className="text-xs text-gray-500">(자녀세액공제)</span></label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max="10"
-                                    className="neo-input"
-                                    value={familyData.childrenOver8}
-                                    onChange={(e) => setFamilyData(prev => ({ ...prev, childrenOver8: Math.max(0, parseInt(e.target.value) || 0) }))}
-                                />
-                            </div>
+
                             <div>
                                 <label className="block font-bold mb-2">직계존속 (만 60세 이상)</label>
                                 <input

@@ -1,12 +1,10 @@
 /**
  * 세금 데이터 저장소
- * localStorage를 사용하여 Admin, Calculator, Dashboard 간 데이터 공유
+ * Supabase를 사용하여 Admin, Calculator, Dashboard 간 데이터 공유
+ * API Route를 통해 서버에서 인증 처리 후 DB에 저장/조회
  */
 
 import { TaxData } from "./ai-recommendation";
-
-const STORAGE_KEY = "taxai_tax_data";
-const ADMIN_STORAGE_KEY_PREFIX = "taxai_admin_data_"; // 연도별: taxai_admin_data_2024, taxai_admin_data_2025 ...
 
 /**
  * Admin 페이지 데이터 인터페이스
@@ -153,26 +151,32 @@ export interface DeductionAnalysis {
 }
 
 /**
- * 세금 데이터 저장
+ * 세금 데이터 저장 (Supabase)
  */
-export function saveTaxData(data: TaxData): void {
+export async function saveTaxData(data: TaxData): Promise<void> {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        const response = await fetch("/api/tax-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ data }),
+        });
+        if (!response.ok) {
+            console.error("Failed to save tax data:", await response.text());
+        }
     } catch (error) {
         console.error("Failed to save tax data:", error);
     }
 }
 
 /**
- * 세금 데이터 불러오기
+ * 세금 데이터 불러오기 (Supabase)
  */
-export function loadTaxData(): TaxData | null {
+export async function loadTaxData(): Promise<TaxData | null> {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            return JSON.parse(stored) as TaxData;
-        }
-        return null;
+        const response = await fetch("/api/tax-data");
+        if (!response.ok) return null;
+        const result = await response.json();
+        return result.data || null;
     } catch (error) {
         console.error("Failed to load tax data:", error);
         return null;
@@ -182,9 +186,9 @@ export function loadTaxData(): TaxData | null {
 /**
  * 세금 데이터 삭제
  */
-export function clearTaxData(): void {
+export async function clearTaxData(): Promise<void> {
     try {
-        localStorage.removeItem(STORAGE_KEY);
+        await fetch("/api/tax-data", { method: "DELETE" });
     } catch (error) {
         console.error("Failed to clear tax data:", error);
     }
@@ -193,9 +197,10 @@ export function clearTaxData(): void {
 /**
  * 세금 데이터 존재 여부 확인
  */
-export function hasTaxData(): boolean {
+export async function hasTaxData(): Promise<boolean> {
     try {
-        return localStorage.getItem(STORAGE_KEY) !== null;
+        const data = await loadTaxData();
+        return data !== null;
     } catch {
         return false;
     }
@@ -204,30 +209,35 @@ export function hasTaxData(): boolean {
 // ==================== Admin 데이터 함수 ====================
 
 /**
- * Admin 데이터 저장 (연도별)
+ * Admin 데이터 저장 (연도별, Supabase)
  */
-export function saveAdminData(year: number, data: AdminData): void {
+export async function saveAdminData(year: number, data: AdminData): Promise<void> {
     try {
-        const key = `${ADMIN_STORAGE_KEY_PREFIX}${year}`;
         console.log("[DEBUG] saveAdminData called for year:", year);
-        localStorage.setItem(key, JSON.stringify(data));
-        console.log("[DEBUG] Admin data saved successfully! Key:", key);
+        const response = await fetch("/api/admin-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ year, data }),
+        });
+        if (!response.ok) {
+            console.error("[ERROR] Failed to save admin data:", await response.text());
+        } else {
+            console.log("[DEBUG] Admin data saved successfully!");
+        }
     } catch (error) {
         console.error("[ERROR] Failed to save admin data:", error);
     }
 }
 
 /**
- * Admin 데이터 불러오기 (연도별)
+ * Admin 데이터 불러오기 (연도별, Supabase)
  */
-export function loadAdminData(year: number): AdminData | null {
+export async function loadAdminData(year: number): Promise<AdminData | null> {
     try {
-        const key = `${ADMIN_STORAGE_KEY_PREFIX}${year}`;
-        const stored = localStorage.getItem(key);
-        if (stored) {
-            return JSON.parse(stored) as AdminData;
-        }
-        return null;
+        const response = await fetch(`/api/admin-data?year=${year}`);
+        if (!response.ok) return null;
+        const result = await response.json();
+        return result.data || null;
     } catch (error) {
         console.error("Failed to load admin data:", error);
         return null;
@@ -237,10 +247,10 @@ export function loadAdminData(year: number): AdminData | null {
 /**
  * Admin 데이터 존재 여부 확인 (연도별)
  */
-export function hasAdminData(year: number): boolean {
+export async function hasAdminData(year: number): Promise<boolean> {
     try {
-        const key = `${ADMIN_STORAGE_KEY_PREFIX}${year}`;
-        return localStorage.getItem(key) !== null;
+        const data = await loadAdminData(year);
+        return data !== null;
     } catch {
         return false;
     }

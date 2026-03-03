@@ -17,7 +17,7 @@ export default function PrivacyPage() {
                         <Shield size={32} strokeWidth={2.5} />
                     </div>
                     <div>
-                        <h1 className="text-3xl md:text-4xl font-black">개인정보처리방침</h1>
+                        <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase">개인정보처리방침</h1>
                         <p className="text-sm font-bold text-gray-500">
                             최종 수정일: 2026년 1월 1일
                         </p>

@@ -292,67 +292,73 @@ export default function DashboardPage() {
 
     // Admin 데이터로 공제 분석, 환급액 계산, AI 추천 생성 (통합)
     useEffect(() => {
-        // 2026년 우선, 없으면 2025년 데이터 사용
-        let adminData = loadAdminData(2026);
-        if (!adminData) {
-            adminData = loadAdminData(2025);
-        }
-        if (adminData) {
-            const analysis = generateDeductionAnalysis(adminData);
-            setDeductionItems(analysis);
-            setHasAdminData(true);
-
-            // 공통 세금 계산 모듈 사용
-            const taxInputs = convertAdminToTaxInputs(adminData);
-            const taxResult = calculateTax(taxInputs);
-
-            // 기납부세액 저장 (목표 상한선)
-            const withheldTax = adminData.salary.prepaidTax || 0;
-            setTotalPrepaidTax(withheldTax);
-
-            // 환급액 설정 (Calculator와 동일한 계산 결과)
-            setCurrentAmount(taxResult.refund);
-
-            // 목표 금액 초기화: 최대 환급 가능 금액 (기납부세액)
-            if (withheldTax > 0) {
-                setGoalAmount(withheldTax);
+        const loadData = async () => {
+            // 2026년 우선, 없으면 2025년 데이터 사용
+            let adminData = await loadAdminData(2026);
+            if (!adminData) {
+                adminData = await loadAdminData(2025);
             }
+            if (adminData) {
+                const analysis = generateDeductionAnalysis(adminData);
+                setDeductionItems(analysis);
+                setHasAdminData(true);
 
-            // AI 추천 생성 - 공제 항목별 상세 분석 결과 기반으로 생성
-            const calculatedSalary = Object.values(adminData.salary.monthly as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
-            setTotalSalary(calculatedSalary);
-            const recommendations = generateRecommendationsFromAnalysis(analysis, calculatedSalary);
-            if (recommendations.length > 0) {
-                setAiRecommendations(recommendations);
-                setHasUserData(true);
+                // 공통 세금 계산 모듈 사용
+                const taxInputs = convertAdminToTaxInputs(adminData);
+                const taxResult = calculateTax(taxInputs);
+
+                // 기납부세액 저장 (목표 상한선)
+                const withheldTax = adminData.salary.prepaidTax || 0;
+                setTotalPrepaidTax(withheldTax);
+
+                // 환급액 설정 (Calculator와 동일한 계산 결과)
+                setCurrentAmount(taxResult.refund);
+
+                // 목표 금액 초기화: 최대 환급 가능 금액 (기납부세액)
+                if (withheldTax > 0) {
+                    setGoalAmount(withheldTax);
+                }
+
+                // AI 추천 생성 - 공제 항목별 상세 분석 결과 기반으로 생성
+                // 총급여 = 급여 + 상여금 + 자녀학자금 (연간 합계 사용)
+                const calculatedSalary = (adminData.salary.totalSalary || 0) +
+                    (adminData.salary.bonus || 0) +
+                    (adminData.salary.childTuition || 0);
+                setTotalSalary(calculatedSalary);
+                const recommendations = generateRecommendationsFromAnalysis(analysis, calculatedSalary);
+                if (recommendations.length > 0) {
+                    setAiRecommendations(recommendations);
+                    setHasUserData(true);
+                } else {
+                    setAiRecommendations(getDefaultRecommendations());
+                    setHasUserData(false);
+                }
             } else {
-                setAiRecommendations(getDefaultRecommendations());
-                setHasUserData(false);
-            }
-        } else {
-            // 데이터 없으면 기본 Mock 사용
-            setDeductionItems(MOCK_DEDUCTIONS.map(d => ({
-                id: d.id,
-                category: d.category,
-                type: d.type,
-                amount: d.amount,
-                limit: d.limit,
-                status: d.status,
-            })));
-            setHasAdminData(false);
-            setCurrentAmount(0);
+                // 데이터 없으면 기본 Mock 사용
+                setDeductionItems(MOCK_DEDUCTIONS.map(d => ({
+                    id: d.id,
+                    category: d.category,
+                    type: d.type,
+                    amount: d.amount,
+                    limit: d.limit,
+                    status: d.status,
+                })));
+                setHasAdminData(false);
+                setCurrentAmount(0);
 
-            // 기존 TaxData 확인 (Calculator 데이터가 있으면 사용)
-            const taxData = loadTaxData();
-            if (taxData && taxData.salary > 0) {
-                const recommendations = generateRecommendations(taxData);
-                setAiRecommendations(recommendations);
-                setHasUserData(true);
-            } else {
-                setAiRecommendations(getDefaultRecommendations());
-                setHasUserData(false);
+                // 기존 TaxData 확인 (Calculator 데이터가 있으면 사용)
+                const taxData = await loadTaxData();
+                if (taxData && taxData.salary > 0) {
+                    const recommendations = generateRecommendations(taxData);
+                    setAiRecommendations(recommendations);
+                    setHasUserData(true);
+                } else {
+                    setAiRecommendations(getDefaultRecommendations());
+                    setHasUserData(false);
+                }
             }
-        }
+        };
+        loadData();
     }, []);
 
     // 뉴스 가져오기
@@ -423,7 +429,7 @@ export default function DashboardPage() {
             {/* Summary Card with Goal Setting */}
             <div className="neo-card bg-neo-white relative overflow-hidden">
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Current Refund */}
                     <div className="lg:col-span-2 relative">
                         {/* 배경 장식 아이콘 */}
@@ -490,7 +496,7 @@ export default function DashboardPage() {
                         <div className="space-y-3">
                             {/* 기납부세액 표시 */}
                             {totalPrepaidTax > 0 && (
-                                <div className="text-xs text-gray-500 font-medium bg-gray-100 px-2 py-1 border border-gray-300">
+                                <div className="text-xs text-gray-500 font-bold bg-gray-100 px-2 py-1 border border-gray-300">
                                     최대 환급 가능: <span className="font-bold text-neo-black">{formatNumber(totalPrepaidTax)}원</span>
                                 </div>
                             )}
@@ -542,13 +548,13 @@ export default function DashboardPage() {
                                 const optimizedAmount = currentAmount + totalPotentialSaving;
                                 if (optimizedAmount >= 0) {
                                     return (
-                                        <p className="text-xs text-gray-600 font-medium">
+                                        <p className="text-xs text-gray-600 font-bold">
                                             AI 추천: 최적화 시 <span className="text-neo-orange font-bold">{formatNumber(optimizedAmount)}원</span> 달성 가능
                                         </p>
                                     );
                                 } else {
                                     return (
-                                        <p className="text-xs text-gray-600 font-medium">
+                                        <p className="text-xs text-gray-600 font-bold">
                                             AI 추천: 최적화 시 추가납부 <span className="text-red-500 font-bold">{formatNumber(Math.abs(optimizedAmount))}원</span>으로 감소 가능
                                         </p>
                                     );
@@ -564,7 +570,7 @@ export default function DashboardPage() {
                 <h3 className="text-xl font-black mb-6 flex items-center gap-2 border-b-2 border-black pb-3">
                     <Sparkles size={24} className="text-neo-orange" />
                     AI 공제 항목별 상세 분석
-                    <span className="ml-auto text-sm font-medium text-gray-500">2026년 기준</span>
+                    <span className="ml-auto text-sm font-bold text-gray-500">2026년 기준</span>
                 </h3>
 
                 {/* Table */}
@@ -695,7 +701,7 @@ export default function DashboardPage() {
                             <div className="p-4 bg-neo-cyan border-2 border-black">
                                 <div className="flex items-center gap-2 mb-3">
                                     <span className="px-2 py-1 text-xs font-bold bg-white border-2 border-black">소득공제</span>
-                                    <span className="text-sm font-medium">과세표준 감소</span>
+                                    <span className="text-sm font-bold">과세표준 감소</span>
                                 </div>
                                 <div className="flex justify-between items-end">
                                     <div>
@@ -724,7 +730,7 @@ export default function DashboardPage() {
                             <div className="p-4 bg-neo-orange border-2 border-black">
                                 <div className="flex items-center gap-2 mb-3">
                                     <span className="px-2 py-1 text-xs font-bold bg-white border-2 border-black">세액공제</span>
-                                    <span className="text-sm font-medium text-white">납부세액 직접 감소</span>
+                                    <span className="text-sm font-bold text-white">납부세액 직접 감소</span>
                                 </div>
                                 <div className="flex justify-between items-end">
                                     <div>
@@ -753,7 +759,7 @@ export default function DashboardPage() {
                         {/* 전체 합계 */}
                         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-3 border-t-2 border-gray-300">
                             <div className="text-center sm:text-left">
-                                <span className="text-sm font-medium text-gray-600">전체 합계: </span>
+                                <span className="text-sm font-bold text-gray-600">전체 합계: </span>
                                 <span className="font-black text-lg">{formatNumber(deductionItems.reduce((sum, d) => sum + d.amount, 0))}원</span>
                                 <span className="text-gray-500"> / </span>
                                 <span className="font-bold text-gray-600">{formatNumber(deductionItems.reduce((sum, d) => sum + d.limit, 0))}원</span>
@@ -769,7 +775,7 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* AI Recommendations */}
                 <div className="neo-card bg-white">
                     <div className="flex items-center justify-between mb-6 border-b-2 border-black pb-2">
@@ -892,7 +898,7 @@ export default function DashboardPage() {
                                                         <span className="text-xs text-gray-500">•</span>
                                                         <span className="text-xs text-gray-500">{article.time}</span>
                                                     </div>
-                                                    <h4 className="font-medium text-sm text-white group-hover:text-neo-yellow transition-colors line-clamp-2">
+                                                    <h4 className="font-bold text-sm text-white group-hover:text-neo-yellow transition-colors line-clamp-2">
                                                         {article.title}
                                                     </h4>
                                                 </div>
@@ -922,7 +928,7 @@ export default function DashboardPage() {
                                                         <span className="text-xs text-gray-500">•</span>
                                                         <span className="text-xs text-gray-500">{article.time}</span>
                                                     </div>
-                                                    <h4 className="font-medium text-sm text-gray-300 group-hover:text-neo-yellow transition-colors line-clamp-2">
+                                                    <h4 className="font-bold text-sm text-gray-300 group-hover:text-neo-yellow transition-colors line-clamp-2">
                                                         {article.title}
                                                     </h4>
                                                 </div>
@@ -947,7 +953,7 @@ export default function DashboardPage() {
                         <AlertCircle size={32} className="text-neo-black" />
                         <div>
                             <h3 className="text-xl font-black">지금 바로 절세 최적화를 시작하세요!</h3>
-                            <p className="text-sm font-medium">AI가 분석한 추천 항목을 실행하면 최대 <span className="font-bold">{formatNumber(totalPotentialSaving)}원</span> 추가 환급 가능</p>
+                            <p className="text-sm font-bold">AI가 분석한 추천 항목을 실행하면 최대 <span className="font-bold">{formatNumber(totalPotentialSaving)}원</span> 추가 환급 가능</p>
                         </div>
                     </div>
                     <Link href="/calculator">

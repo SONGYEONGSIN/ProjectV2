@@ -1,10 +1,14 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Calculator, LayoutDashboard, ClipboardList, Home } from "lucide-react";
+import { Calculator, LayoutDashboard, ClipboardList, Clock, MessageSquareText } from "lucide-react";
 import clsx from "clsx";
 import { useSession, signOut } from "next-auth/react";
+
+const SESSION_TIMEOUT = 30 * 60; // 30분 (초)
 
 export function Navigation() {
     const pathname = usePathname();
@@ -13,17 +17,61 @@ export function Navigation() {
     const isAuthPage = pathname === "/login" || pathname === "/signup";
     const showMobileNav = !isLanding && !isAuthPage;
 
+    // 세션 남은 시간 카운트다운
+    const [remainingTime, setRemainingTime] = useState(SESSION_TIMEOUT);
+
+    const resetTimer = useCallback(() => {
+        setRemainingTime(SESSION_TIMEOUT);
+    }, []);
+
+    useEffect(() => {
+        if (!session) return;
+
+        // 사용자 활동 감지 → 타이머 리셋
+        const events = ["mousedown", "keydown", "scroll", "touchstart"];
+        events.forEach((event) => window.addEventListener(event, resetTimer));
+
+        // 1초마다 카운트다운
+        const interval = setInterval(() => {
+            setRemainingTime((prev) => {
+                if (prev <= 1) {
+                    clearInterval(interval);
+                    signOut({ callbackUrl: "/" });
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => {
+            clearInterval(interval);
+            events.forEach((event) => window.removeEventListener(event, resetTimer));
+        };
+    }, [session, resetTimer]);
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s.toString().padStart(2, "0")}`;
+    };
+
+    const isTimeWarning = remainingTime <= 5 * 60; // 5분 이하 경고
+
     return (
         <>
             <nav className="border-b-[3px] border-black bg-white sticky top-0 z-50">
                 <div className="container mx-auto px-4 h-16 flex items-center justify-between">
                     <Link
                         href="/"
-                        className="flex items-center gap-2 hover:scale-105 transition-transform"
+                        className="flex items-center gap-0 hover:scale-105 transition-transform"
                     >
-                        <div className="w-8 h-8 bg-black flex items-center justify-center text-white">
-                            <Calculator size={20} strokeWidth={3} />
-                        </div>
+                        <Image
+                            src="/logo.png"
+                            alt="TAXAI 로고"
+                            width={64}
+                            height={64}
+                            className="rounded-lg"
+                        />
                         <span className="font-head text-xl font-black tracking-tighter">
                             TAX<span className="text-neo-orange">AI</span>
                         </span>
@@ -59,6 +107,15 @@ export function Navigation() {
                             >
                                 ADMIN
                             </Link>
+                            <Link
+                                href="/board"
+                                className={clsx(
+                                    "neo-nav-item",
+                                    pathname.startsWith("/board") && "active"
+                                )}
+                            >
+                                BOARD
+                            </Link>
                         </div>
                     )}
 
@@ -66,8 +123,19 @@ export function Navigation() {
                         {session ? (
                             // 로그인 상태: 모든 페이지에서 사용자 정보 표시
                             <>
-                                <div className="hidden md:block font-bold text-sm">
-                                    {session.user?.name || "사용자"}님
+                                <div className="hidden md:flex items-center gap-2">
+                                    <span className="font-bold text-sm">
+                                        {session.user?.name || "사용자"}님
+                                    </span>
+                                    <div className={clsx(
+                                        "flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border",
+                                        isTimeWarning
+                                            ? "bg-red-50 text-red-600 border-red-300 animate-pulse"
+                                            : "bg-gray-100 text-gray-500 border-gray-200"
+                                    )}>
+                                        <Clock size={12} />
+                                        <span>{formatTime(remainingTime)}</span>
+                                    </div>
                                 </div>
                                 <div className="w-8 h-8 rounded-full border-2 border-black bg-gray-200 overflow-hidden">
                                     <img
@@ -151,6 +219,18 @@ export function Navigation() {
                         >
                             <ClipboardList size={22} strokeWidth={pathname === "/admin" ? 2.5 : 2} />
                             <span className="text-xs font-bold mt-1">기초자료</span>
+                        </Link>
+                        <Link
+                            href="/board"
+                            className={clsx(
+                                "flex flex-col items-center justify-center flex-1 h-full transition-all",
+                                pathname.startsWith("/board")
+                                    ? "bg-neo-pink text-black"
+                                    : "text-gray-500 hover:bg-gray-100"
+                            )}
+                        >
+                            <MessageSquareText size={22} strokeWidth={pathname.startsWith("/board") ? 2.5 : 2} />
+                            <span className="text-xs font-bold mt-1">게시판</span>
                         </Link>
                     </div>
                 </nav>

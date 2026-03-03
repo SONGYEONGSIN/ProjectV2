@@ -159,8 +159,8 @@ export default function AdminPage() {
     };
 
     // 저장된 데이터 불러오기 (연도별)
-    const loadYearData = (year: number) => {
-        const savedData = loadAdminData(year);
+    const loadYearData = async (year: number) => {
+        const savedData = await loadAdminData(year);
         if (savedData) {
             // 월별 급여 데이터 복원
             if (savedData.salary.monthly) {
@@ -281,7 +281,7 @@ export default function AdminPage() {
     };
 
     // 데이터 저장 함수
-    const handleSave = () => {
+    const handleSave = async () => {
         const parseAmount = (str: string | undefined | null): number => {
             if (!str) return 0;
             return parseInt(str.replace(/[^0-9]/g, "")) || 0;
@@ -380,7 +380,7 @@ export default function AdminPage() {
             updatedAt: new Date().toISOString(),
         };
 
-        saveAdminData(selectedYear, adminData);
+        await saveAdminData(selectedYear, adminData);
         showNotification("success", "저장되었습니다!");
     };
 
@@ -2061,7 +2061,7 @@ export default function AdminPage() {
                                             const count = ocrDuplicateItems.filter(d => d.merchant === item.merchant && d.amount === item.amount).length;
                                             return (
                                                 <p key={idx} className="text-gray-700">
-                                                    <span className="font-semibold">{item.merchant}</span> ({item.amount.toLocaleString()}원) - {count}건 중복, 1건만 적용
+                                                    <span className="font-bold">{item.merchant}</span> ({item.amount.toLocaleString()}원) - {count}건 중복, 1건만 적용
                                                 </p>
                                             );
                                         })}
@@ -2450,7 +2450,7 @@ export default function AdminPage() {
                                             key={hasSpouse ? "yes" : "no"}
                                             onClick={() => setFamilyData(prev => ({ ...prev, spouse: hasSpouse }))}
                                             className={clsx(
-                                                "flex-1 p-3 border-[3px] border-black font-semibold text-lg transition-colors",
+                                                "flex-1 p-3 border-[3px] border-black font-bold text-lg transition-colors",
                                                 familyData.spouse === hasSpouse ? "bg-black text-white" : "bg-white hover:bg-gray-100"
                                             )}
                                         >
@@ -3046,7 +3046,7 @@ export default function AdminPage() {
                                         <div className="flex-1">
                                             <p className="font-bold text-base">{item.merchantName}</p>
                                             <p className="text-sm text-gray-500 mt-1">
-                                                🔍 유사 매칭: <span className="font-semibold text-black">{item.matchedMarketName}</span>
+                                                🔍 유사 매칭: <span className="font-bold text-black">{item.matchedMarketName}</span>
                                             </p>
                                             <p className="text-xs text-gray-400">
                                                 📍 {item.belongsTo} ({item.address}) · 매칭률 {(item.matchRatio * 100).toFixed(0)}%

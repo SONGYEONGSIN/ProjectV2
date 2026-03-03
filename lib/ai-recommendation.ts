@@ -288,9 +288,11 @@ export function convertAdminDataToTaxData(adminData: any): TaxData | null {
         return Object.values(adminData.spending[category] as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
     };
 
-    // 총급여 계산
-    const totalSalary = Object.values(adminData.salary.monthly as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
-    const mealAllowance = Object.values(adminData.salary.mealAllowance as Record<string, number>).reduce((sum: number, val: number) => sum + (val || 0), 0);
+    // 총급여 계산 (연간 합계 사용)
+    const totalSalary = (adminData.salary.totalSalary || 0) +
+        (adminData.salary.bonus || 0) +
+        (adminData.salary.childTuition || 0);
+    const mealAllowance = adminData.salary.mealAllowance || 0;
     const salary = totalSalary - mealAllowance; // 비과세 제외
 
     // 부양가족 수 계산

@@ -13,19 +13,33 @@ export async function GET(request: NextRequest) {
     const searchType = searchParams.get("searchType") || "title"; // title | author
     const category = searchParams.get("category") || "";
 
+    // 현재 로그인한 사용자 확인 (비공개 글 필터링용)
+    const session = await auth();
+    const currentUserEmail = session?.user?.email || "";
+
     try {
-        // 1. 상단 고정 글 (공지/FAQ)
+        // 1. 상단 고정 글 (공지/Q&A) - 공개 글만
         const { data: pinnedPosts } = await supabase
             .from("board_posts")
             .select("*")
             .eq("is_pinned", true)
+            .or(`is_public.eq.true,is_public.is.null`)
             .order("created_at", { ascending: false });
 
         // 2. 일반 글 (검색 + 페이지네이션)
+        // 공개 글 + 본인의 비공개 글만 표시
         let query = supabase
             .from("board_posts")
             .select("*", { count: "exact" })
             .eq("is_pinned", false);
+
+        if (currentUserEmail) {
+            // 로그인 상태: 공개 글 + 본인 비공개 글
+            query = query.or(`is_public.eq.true,is_public.is.null,author_email.eq.${currentUserEmail}`);
+        } else {
+            // 비로그인 상태: 공개 글만
+            query = query.or(`is_public.eq.true,is_public.is.null`);
+        }
 
         if (category) {
             query = query.eq("category", category);
@@ -74,7 +88,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { title, content, category } = body;
+        const { title, content, category, is_public } = body;
 
         if (!title?.trim() || !content?.trim()) {
             return NextResponse.json(
@@ -86,7 +100,7 @@ export async function POST(request: NextRequest) {
         // 관리자 전용 카테고리 권한 체크
         if (ADMIN_ONLY_CATEGORIES.includes(category) && !isAdmin(session.user.email)) {
             return NextResponse.json(
-                { success: false, error: "FAQ/공지 카테고리는 관리자만 작성할 수 있습니다." },
+                { success: false, error: "Q&A/공지 카테고리는 관리자만 작성할 수 있습니다." },
                 { status: 403 }
             );
         }
@@ -99,7 +113,8 @@ export async function POST(request: NextRequest) {
                 category: category || "일반",
                 author_name: session.user.name || "익명",
                 author_email: session.user.email || "",
-                is_pinned: category === "공지" || category === "FAQ",
+                is_pinned: category === "공지" || category === "Q&A",
+                is_public: is_public !== false, // 기본값 true
             })
             .select()
             .single();

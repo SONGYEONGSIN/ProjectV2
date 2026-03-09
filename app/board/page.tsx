@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, PenSquare, Pin, Eye, ChevronLeft, ChevronRight, MessageSquare, HelpCircle, Megaphone, FileText } from "lucide-react";
+import { Search, PenSquare, Pin, Eye, ChevronLeft, ChevronRight, MessageSquare, HelpCircle, Megaphone, FileText, Lock } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 
@@ -12,8 +12,10 @@ interface BoardPost {
     category: string;
     title: string;
     author_name: string;
+    author_email: string;
     views: number;
     is_pinned: boolean;
+    is_public: boolean;
     created_at: string;
 }
 
@@ -27,7 +29,7 @@ interface BoardData {
 
 const categoryStyles: Record<string, { bg: string; text: string; icon: React.ElementType }> = {
     "공지": { bg: "bg-red-400 text-white", text: "공지", icon: Megaphone },
-    "FAQ": { bg: "bg-neo-cyan text-black", text: "FAQ", icon: HelpCircle },
+    "Q&A": { bg: "bg-neo-cyan text-black", text: "Q&A", icon: HelpCircle },
     "질문": { bg: "bg-neo-yellow text-black", text: "질문", icon: MessageSquare },
     "일반": { bg: "bg-gray-200 text-black", text: "일반", icon: FileText },
 };
@@ -131,6 +133,9 @@ export default function BoardPage() {
                         <span className="font-bold text-sm sm:text-base truncate max-w-[200px] sm:max-w-none">
                             {post.title}
                         </span>
+                        {post.is_public === false && (
+                            <Lock size={14} className="text-gray-400 flex-shrink-0" />
+                        )}
                     </div>
                 </td>
                 <td className="py-3 px-2 sm:px-4 text-center font-bold text-sm text-gray-600 whitespace-nowrap hidden sm:table-cell">

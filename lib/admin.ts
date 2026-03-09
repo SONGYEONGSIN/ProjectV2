@@ -14,4 +14,4 @@ export function isAdmin(email: string | null | undefined): boolean {
 /**
  * 관리자만 사용 가능한 카테고리
  */
-export const ADMIN_ONLY_CATEGORIES = ["FAQ", "공지"];
+export const ADMIN_ONLY_CATEGORIES = ["Q&A", "공지"];

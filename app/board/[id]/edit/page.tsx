@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Send, FileText, Lock, Globe } from "lucide-react";
+import { ArrowLeft, Save, FileText, Lock, Globe } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { ADMIN_ONLY_CATEGORIES } from "@/lib/admin";
@@ -13,7 +13,18 @@ const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "ysong2526@gmail.c
     .split(",")
     .map((e) => e.trim().toLowerCase());
 
-export default function BoardWritePage() {
+interface BoardPost {
+    id: number;
+    category: string;
+    title: string;
+    content: string;
+    author_name: string;
+    author_email: string;
+    is_public: boolean;
+}
+
+export default function BoardEditPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = use(params);
     const router = useRouter();
     const { data: session } = useSession();
     const userIsAdmin = ADMIN_EMAILS.includes(session?.user?.email?.toLowerCase() || "");
@@ -22,7 +33,43 @@ export default function BoardWritePage() {
     const [content, setContent] = useState("");
     const [isPublic, setIsPublic] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
+    // 기존 게시글 데이터 로드
+    useEffect(() => {
+        const fetchPost = async () => {
+            try {
+                const res = await fetch(`/api/board/${id}`);
+                const data = await res.json();
+                if (data.success) {
+                    const post: BoardPost = data.data;
+                    // 작성자 본인인지 확인
+                    if (post.author_email !== session?.user?.email) {
+                        alert("본인이 작성한 글만 수정할 수 있습니다.");
+                        router.push(`/board/${id}`);
+                        return;
+                    }
+                    setCategory(post.category);
+                    setTitle(post.title);
+                    setContent(post.content);
+                    setIsPublic(post.is_public !== false);
+                } else {
+                    alert("게시글을 찾을 수 없습니다.");
+                    router.push("/board");
+                }
+            } catch {
+                alert("게시글을 불러오는 중 오류가 발생했습니다.");
+                router.push("/board");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (session) {
+            fetchPost();
+        }
+    }, [id, session, router]);
 
     if (!session) {
         return (
@@ -31,6 +78,17 @@ export default function BoardWritePage() {
                 <Link href="/login" className="neo-btn !py-3 !px-5">
                     로그인하기
                 </Link>
+            </div>
+        );
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[50vh]">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 border-4 border-neo-orange border-t-transparent rounded-full animate-spin" />
+                    <span className="font-bold text-gray-500">로딩 중...</span>
+                </div>
             </div>
         );
     }
@@ -49,8 +107,8 @@ export default function BoardWritePage() {
         setError("");
 
         try {
-            const res = await fetch("/api/board", {
-                method: "POST",
+            const res = await fetch(`/api/board/${id}`, {
+                method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ title, content, category, is_public: isPublic }),
             });
@@ -58,12 +116,12 @@ export default function BoardWritePage() {
             const data = await res.json();
 
             if (data.success) {
-                router.push("/board");
+                router.push(`/board/${id}`);
             } else {
-                setError(data.error || "게시글 작성에 실패했습니다.");
+                setError(data.error || "게시글 수정에 실패했습니다.");
             }
         } catch {
-            setError("게시글 작성 중 오류가 발생했습니다.");
+            setError("게시글 수정 중 오류가 발생했습니다.");
         } finally {
             setSubmitting(false);
         }
@@ -77,15 +135,15 @@ export default function BoardWritePage() {
         >
             {/* Header */}
             <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-neo-cyan border-[3px] border-black flex items-center justify-center shadow-[4px_4px_0px_0px_#000]">
+                <div className="w-12 h-12 bg-neo-yellow border-[3px] border-black flex items-center justify-center shadow-[4px_4px_0px_0px_#000]">
                     <FileText size={24} strokeWidth={2.5} />
                 </div>
                 <div>
                     <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase">
-                        글쓰기
+                        글 수정
                     </h1>
                     <p className="text-sm font-bold text-gray-500">
-                        연말정산 관련 질문, 정보를 공유해보세요
+                        게시글 내용을 수정합니다
                     </p>
                 </div>
             </div>
@@ -198,11 +256,11 @@ export default function BoardWritePage() {
                 <div className="flex items-center justify-between pt-4 border-t-2 border-gray-200">
                     <motion.div whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
                         <Link
-                            href="/board"
+                            href={`/board/${id}`}
                             className="inline-flex items-center gap-2 px-5 py-2.5 bg-white border-[3px] border-black font-bold shadow-[4px_4px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] active:shadow-none transition-all"
                         >
                             <ArrowLeft size={18} />
-                            목록보기
+                            취소
                         </Link>
                     </motion.div>
 
@@ -212,10 +270,10 @@ export default function BoardWritePage() {
                             whileTap={{ scale: 0.98 }}
                             onClick={handleSubmit}
                             disabled={submitting}
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-neo-orange text-white border-[3px] border-black font-black text-lg shadow-[6px_6px_0px_0px_#000] hover:shadow-[4px_4px_0px_0px_#000] active:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-neo-cyan text-black border-[3px] border-black font-black text-lg shadow-[6px_6px_0px_0px_#000] hover:shadow-[4px_4px_0px_0px_#000] active:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <Send size={18} />
-                            {submitting ? "등록 중..." : "새글 등록"}
+                            <Save size={18} />
+                            {submitting ? "수정 중..." : "수정 완료"}
                         </motion.button>
                     </div>
                 </div>

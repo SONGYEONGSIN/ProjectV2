@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 import { AuthProvider } from "@/components/providers/AuthProvider";
+import { WebApplicationJsonLd, FAQPageJsonLd } from "@/components/seo/JsonLd";
 
 const inter = Inter({
     subsets: ["latin"],
@@ -58,6 +59,9 @@ export const metadata: Metadata = {
             "max-snippet": -1,
         },
     },
+    alternates: {
+        canonical: "/",
+    },
     verification: {
         // Google Search Console 등록 후 아래 값 교체
         // google: "your-google-verification-code",
@@ -83,6 +87,8 @@ export default function RootLayout({
                         </main>
                         <Footer />
                     </div>
+                    <WebApplicationJsonLd />
+                    <FAQPageJsonLd />
                 </AuthProvider>
             </body>
         </html>

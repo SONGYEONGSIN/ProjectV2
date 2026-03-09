@@ -91,7 +91,6 @@ export function Footer() {
                         </h4>
                         <ul className="space-y-2 text-sm font-bold text-gray-600">
                             <li>ysong2526@gmail.com</li>
-                            <li>02-1234-5678</li>
                         </ul>
                     </div>
                 </div>

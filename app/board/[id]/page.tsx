@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Eye, Calendar, User, Trash2, Pin, MessageSquare, HelpCircle, Megaphone, FileText } from "lucide-react";
+import { ArrowLeft, Eye, Calendar, User, Trash2, Pin, MessageSquare, HelpCircle, Megaphone, FileText, Lock, Pencil } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 
@@ -16,12 +16,13 @@ interface BoardPost {
     author_email: string;
     views: number;
     is_pinned: boolean;
+    is_public: boolean;
     created_at: string;
 }
 
 const categoryStyles: Record<string, { bg: string; text: string; icon: React.ElementType }> = {
     "공지": { bg: "bg-red-400 text-white", text: "공지", icon: Megaphone },
-    "FAQ": { bg: "bg-neo-cyan text-black", text: "FAQ", icon: HelpCircle },
+    "Q&A": { bg: "bg-neo-cyan text-black", text: "Q&A", icon: HelpCircle },
     "질문": { bg: "bg-neo-yellow text-black", text: "질문", icon: MessageSquare },
     "일반": { bg: "bg-gray-200 text-black", text: "일반", icon: FileText },
 };
@@ -139,6 +140,12 @@ export default function BoardDetailPage({ params }: { params: Promise<{ id: stri
                         <Eye size={14} />
                         <span>조회 {post.views}</span>
                     </div>
+                    {post.is_public === false && (
+                        <div className="flex items-center gap-1.5 text-neo-orange">
+                            <Lock size={14} />
+                            <span>비공개</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Content */}
@@ -160,16 +167,27 @@ export default function BoardDetailPage({ params }: { params: Promise<{ id: stri
                 </motion.div>
 
                 {isAuthor && (
-                    <motion.button
-                        whileHover={{ y: -1 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={handleDelete}
-                        disabled={deleting}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-400 text-white border-[3px] border-black font-bold shadow-[4px_4px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] active:shadow-none transition-all disabled:opacity-50"
-                    >
-                        <Trash2 size={18} />
-                        {deleting ? "삭제 중..." : "삭제"}
-                    </motion.button>
+                    <div className="flex items-center gap-3">
+                        <motion.div whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
+                            <Link
+                                href={`/board/${id}/edit`}
+                                className="inline-flex items-center gap-2 px-5 py-2.5 bg-neo-yellow text-black border-[3px] border-black font-bold shadow-[4px_4px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] active:shadow-none transition-all"
+                            >
+                                <Pencil size={18} />
+                                수정
+                            </Link>
+                        </motion.div>
+                        <motion.button
+                            whileHover={{ y: -1 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={handleDelete}
+                            disabled={deleting}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-400 text-white border-[3px] border-black font-bold shadow-[4px_4px_0px_0px_#000] hover:shadow-[2px_2px_0px_0px_#000] active:shadow-none transition-all disabled:opacity-50"
+                        >
+                            <Trash2 size={18} />
+                            {deleting ? "삭제 중..." : "삭제"}
+                        </motion.button>
+                    </div>
                 )}
             </div>
         </motion.div>

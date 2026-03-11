@@ -70,8 +70,8 @@
   --color-neo-white: #FFFFFF;
 
   /* Fonts */
-  --font-head: "Lexend Mega", sans-serif;
-  --font-body: "Inter", sans-serif;
+  --font-head: var(--font-lexend), "Lexend", sans-serif;
+  --font-body: var(--font-inter), "Inter", sans-serif;
 }
 
 @layer base {

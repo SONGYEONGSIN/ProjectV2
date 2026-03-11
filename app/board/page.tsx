@@ -197,7 +197,7 @@ export default function BoardPage() {
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onKeyDown={handleKeyDown}
                             placeholder="검색어를 입력하세요"
-                            className="flex-1 border-[3px] border-black px-4 py-2 font-bold text-sm focus:outline-none focus:shadow-[4px_4px_0px_0px_#FFB800]"
+                            className="flex-1 min-w-0 border-[3px] border-black px-4 py-2 font-bold text-sm focus:outline-none focus:shadow-[4px_4px_0px_0px_#FFB800]"
                         />
                     </div>
                     <motion.button

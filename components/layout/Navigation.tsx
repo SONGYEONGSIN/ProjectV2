@@ -143,15 +143,7 @@ export function Navigation() {
                                         alt="User"
                                     />
                                 </div>
-                                {isLanding ? (
-                                    // 메인 페이지에서는 대시보드 가기 버튼도 표시
-                                    <Link
-                                        href="/dashboard"
-                                        className="px-3 py-1.5 md:px-4 md:py-2 font-black border-2 border-black bg-neo-yellow hover:bg-yellow-400 text-xs md:text-sm shadow-[2px_2px_0px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all whitespace-nowrap"
-                                    >
-                                        대시보드
-                                    </Link>
-                                ) : null}
+
                                 <button
                                     onClick={() => signOut({ callbackUrl: "/" })}
                                     className="px-2 py-1.5 md:px-3 font-bold text-xs md:text-sm border-2 border-black bg-white hover:bg-red-100 shadow-[2px_2px_0px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all whitespace-nowrap"

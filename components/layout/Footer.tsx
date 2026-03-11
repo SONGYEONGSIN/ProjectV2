@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Calculator } from "lucide-react";
+import Image from "next/image";
 
 export function Footer() {
     return (
@@ -7,10 +7,14 @@ export function Footer() {
             <div className="container mx-auto px-4">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                     <div className="md:col-span-1">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-8 h-8 bg-black flex items-center justify-center text-white">
-                                <Calculator size={20} strokeWidth={3} />
-                            </div>
+                        <div className="flex items-center gap-0 mb-4">
+                            <Image
+                                src="/logo.png"
+                                alt="TAXAI 로고"
+                                width={64}
+                                height={64}
+                                className="rounded-lg"
+                            />
                             <span className="font-head text-xl font-black tracking-tighter">
                                 TAX<span className="text-neo-orange">AI</span>
                             </span>
@@ -87,7 +91,6 @@ export function Footer() {
                         </h4>
                         <ul className="space-y-2 text-sm font-bold text-gray-600">
                             <li>ysong2526@gmail.com</li>
-                            <li>02-1234-5678</li>
                         </ul>
                     </div>
                 </div>

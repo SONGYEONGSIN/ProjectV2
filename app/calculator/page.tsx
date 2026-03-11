@@ -561,45 +561,45 @@ export default function CalculatorPage() {
 
     const [openSection, setOpenSection] = useState<string | null>("salary");
     const [inputs, setInputs] = useState<FormInputs>({
-        annualSalary: 61622780,      // 연봉 (급여 + 상여)
-        mealAllowance: 2400000,      // 비과세(식대) - 연간 (월 20만원 x 12)
-        childrenUnder6: 1,           // 6세 이하 자녀 수
-        salary: 56822780,            // 총급여액 (자동 계산됨)
-        withheldTax: 1267560,        // 기납부세액 (소득세)
-        localIncomeTax: 126720,      // 기납부세액 (지방소득세)
+        annualSalary: 0,             // 연봉 (급여 + 상여)
+        mealAllowance: 0,            // 비과세(식대) - 연간 (월 20만원 x 12)
+        childrenUnder6: 0,           // 6세 이하 자녀 수
+        salary: 0,                   // 총급여액 (자동 계산됨)
+        withheldTax: 0,              // 기납부세액 (소득세)
+        localIncomeTax: 0,           // 기납부세액 (지방소득세)
         // 인적공제 상세
         spouse: 0,                   // 배우자 (0 또는 1)
         parents: 0,                  // 직계존속 (만60세 이상)
-        children: 3,                 // 자녀 (만20세 이하)
+        children: 0,                 // 자녀 (만20세 이하)
         siblings: 0,                 // 형제자매
         foster: 0,                   // 위탁아동
         recipient: 0,                // 기초생활수급자
-        dependents: 4,               // 총 부양가족 수 (본인1 + 자녀3)
-        nationalPension: 2258520,    // 국민연금
-        healthInsurance: 1960580,    // 건강보험료
-        longTermCare: 253760,        // 노인장기요양보험료
-        employmentInsurance: 511390, // 고용보험료
+        dependents: 1,               // 총 부양가족 수 (본인1)
+        nationalPension: 0,          // 국민연금
+        healthInsurance: 0,          // 건강보험료
+        longTermCare: 0,             // 노인장기요양보험료
+        employmentInsurance: 0,      // 고용보험료
         // 카드 사용액
         cardChildren: 0,             // 카드 소득공제 자녀 수
-        creditCard: 15241850,        // 신용카드
-        debitCard: 11036540,         // 직불카드
-        cash: 6162286,               // 현금영수증
-        traditionalMarket: 1984300,  // 전통시장
-        publicTransport: 1358970,    // 대중교통
-        culture: 203767,             // 문화체육
+        creditCard: 0,               // 신용카드
+        debitCard: 0,                // 직불카드
+        cash: 0,                     // 현금영수증
+        traditionalMarket: 0,        // 전통시장
+        publicTransport: 0,          // 대중교통
+        culture: 0,                  // 문화체육
         // 의료비
         infertility: 0,              // 난임시술비
         premature: 0,                // 미숙아·선천성이상아
-        selfDisabledSenior: 454200,  // 본인/장애인/만65세이상/6세이하
-        otherFamily: 1402140,        // 그 밖의 부양가족
-        insuranceReimbursement: 467488, // 실손의료보험금
-        medical: 1388852,            // 의료비 합계
+        selfDisabledSenior: 0,       // 본인/장애인/만65세이상/6세이하
+        otherFamily: 0,              // 그 밖의 부양가족
+        insuranceReimbursement: 0,   // 실손의료보험금
+        medical: 0,                  // 의료비 합계
         // 교육비
         selfEducation: 0,            // 본인 교육비
-        preschool: 180000,           // 미취학 자녀
-        elementary: 1448170,         // 초중고
+        preschool: 0,                // 미취학 자녀
+        elementary: 0,               // 초중고
         university: 0,               // 대학
-        education: 1628170,          // 교육비 합계
+        education: 0,                // 교육비 합계
         // 주택자금
         housingSubscription: 0,      // 주택청약저축
         rentLoanPayment: 0,          // 주택임차차입금 원리금상환액
@@ -607,15 +607,15 @@ export default function CalculatorPage() {
         monthlyRent: 0,              // 월세 세액공제
         housing: 0,                  // 주택자금 합계
         // 연금 및 보험
-        pensionSavings: 6000000,     // 연금저축
-        irp: 3000000,                // 퇴직연금(IRP)
+        pensionSavings: 0,           // 연금저축
+        irp: 0,                      // 퇴직연금(IRP)
         isaTransfer: 0,              // ISA 만기 전환금액
-        generalInsurance: 1000000,   // 일반 보장성 보험료
+        generalInsurance: 0,         // 일반 보장성 보험료
         disabledInsurance: 0,        // 장애인 전용 보장성 보험료
-        pension: 9000000,            // 연금계좌 합계
+        pension: 0,                  // 연금계좌 합계
         // 기부금
-        politicalDonation: 100000,   // 정치자금 기부금
-        hometownDonation: 100000,    // 고향사랑 기부금
+        politicalDonation: 0,        // 정치자금 기부금
+        hometownDonation: 0,         // 고향사랑 기부금
         hometownDisaster: 0,         // 고향사랑 특별재난지역
         specialDonation: 0,          // 특례기부금
         employeeDonation: 0,         // 우리사주조합 기부금
@@ -680,7 +680,7 @@ export default function CalculatorPage() {
     const handleCalculate = () => {
         setIsCalculating(true);
         // 약간의 딜레이를 줘서 계산 중임을 시각적으로 표시
-        setTimeout(() => {
+        setTimeout(async () => {
             const taxResult = calculateTax(inputs);
             setResult(taxResult);
             setIsCalculating(false);
@@ -711,17 +711,17 @@ export default function CalculatorPage() {
                 hometownDonation: inputs.hometownDonation,
                 designatedDonation: inputs.designatedDonation,
             };
-            saveTaxData(taxData);
+            await saveTaxData(taxData);
         }, 500);
     };
 
     const [isResetting, setIsResetting] = useState(false);
     const [isLoadingData, setIsLoadingData] = useState(false);
 
-    const handleLoadData = () => {
+    const handleLoadData = async () => {
         setIsLoadingData(true);
 
-        const adminData = loadAdminData(2026); // 2026년 기준
+        const adminData = await loadAdminData(2026); // 2026년 기준
         console.log("[DEBUG] Admin data loaded:", adminData);
         console.log("[DEBUG] Salary data:", adminData?.salary);
         console.log("[DEBUG] totalSalary:", adminData?.salary?.totalSalary);
@@ -853,7 +853,7 @@ export default function CalculatorPage() {
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-fade-in">
             {/* Input Section */}
             <div className="lg:col-span-2 space-y-4">
                 <div className="flex justify-between items-center mb-6">
@@ -1045,7 +1045,7 @@ export default function CalculatorPage() {
                                                                         key={num}
                                                                         onClick={() => handleInputChange("spouse", num)}
                                                                         className={clsx(
-                                                                            "flex-1 p-3 border-[3px] border-black font-semibold text-lg transition-colors",
+                                                                            "flex-1 p-3 border-[3px] border-black font-bold text-lg transition-colors",
                                                                             inputs.spouse === num ? "bg-black text-white" : "bg-white hover:bg-gray-100"
                                                                         )}
                                                                     >
@@ -1436,10 +1436,10 @@ export default function CalculatorPage() {
                                                             return (
                                                                 <>
                                                                     {/* 25% 기준 */}
-                                                                    <p className="font-semibold">▸ 총급여의 25%: {formatNumber(threshold)}원 (순차 소진)</p>
+                                                                    <p className="font-bold">▸ 총급여의 25%: {formatNumber(threshold)}원 (순차 소진)</p>
 
                                                                     {/* 순차 소진 상세 */}
-                                                                    <p className="font-semibold border-t border-black pt-1 mt-2">▸ 25% 소진 순서 (초과분만 공제)</p>
+                                                                    <p className="font-bold border-t border-black pt-1 mt-2">▸ 25% 소진 순서 (초과분만 공제)</p>
                                                                     {inputs.creditCard > 0 && (
                                                                         <p>① 신용카드: {formatNumber(inputs.creditCard)}원 중 {formatNumber(creditUsed)}원 소진 → <span className="font-bold text-blue-600">초과 {formatNumber(creditExcess)}원 × 15% = {formatNumber(creditDeduction)}원</span></p>
                                                                     )}
@@ -1460,7 +1460,7 @@ export default function CalculatorPage() {
                                                                     )}
 
                                                                     {/* 기본 공제 한도 */}
-                                                                    <p className="font-semibold border-t border-black pt-1 mt-2">▸ 기본 공제 (신용카드·직불카드·현금영수증)</p>
+                                                                    <p className="font-bold border-t border-black pt-1 mt-2">▸ 기본 공제 (신용카드·직불카드·현금영수증)</p>
                                                                     <p className="text-gray-700">
                                                                         공제액: {formatNumber(basicDeduction)}원 / 한도: {formatNumber(basicLimit)}원 → <span className="font-bold">{formatNumber(finalBasic)}원</span>
                                                                     </p>
@@ -1468,7 +1468,7 @@ export default function CalculatorPage() {
                                                                     {/* 추가 공제 한도 */}
                                                                     {(inputs.publicTransport > 0 || inputs.traditionalMarket > 0 || inputs.culture > 0) && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 추가 공제 (대중교통·전통시장·문화체육)</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 추가 공제 (대중교통·전통시장·문화체육)</p>
                                                                             <p className="text-gray-700">
                                                                                 공제액: {formatNumber(additionalDeduction)}원 / 한도: {formatNumber(additionalLimit)}원 → <span className="font-bold">{formatNumber(finalAdditional)}원</span>
                                                                             </p>
@@ -1674,20 +1674,20 @@ export default function CalculatorPage() {
                                                             return (
                                                                 <>
                                                                     {/* 총 의료비 */}
-                                                                    <p className="font-semibold">▸ 총 의료비 사용금액</p>
+                                                                    <p className="font-bold">▸ 총 의료비 사용금액</p>
                                                                     <p>{formatNumber(totalMedical)}원</p>
                                                                     <p>　- 실손의료보험금 (차감): -{formatNumber(inputs.insuranceReimbursement)}원</p>
                                                                     <p className="font-bold">= 실제 의료비: {formatNumber(actualMedical)}원</p>
 
                                                                     {/* 3% 기준 */}
-                                                                    <p className="font-semibold border-t border-black pt-1 mt-2">▸ 총급여 3% 기준 (최저한도)</p>
+                                                                    <p className="font-bold border-t border-black pt-1 mt-2">▸ 총급여 3% 기준 (최저한도)</p>
                                                                     <p>{formatNumber(threshold)}원</p>
                                                                     <p className="font-bold">= 3% 초과분 (공제대상 금액): {formatNumber(excessAmount)}원</p>
 
                                                                     {/* 순차 소진 상세 */}
                                                                     {excessAmount > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 항목별 세액공제 (공제율 높은순 소진)</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 항목별 세액공제 (공제율 높은순 소진)</p>
                                                                             {inputs.infertility > 0 && (
                                                                                 <p>① 난임시술비 ({formatNumber(inputs.infertility)}원 중 {formatNumber(infertilityUsed)}원 소진)
                                                                                     → <span className="font-bold text-green-600">초과 {formatNumber(infertilityExcess)}원 × 30% = {formatNumber(infertilityDeduction)}원</span></p>
@@ -1931,7 +1931,7 @@ export default function CalculatorPage() {
                                                     <div className="text-sm space-y-1">
                                                         {((inputs.housingSubscription > 0 && inputs.salary <= 70000000) || inputs.rentLoanPayment > 0 || inputs.mortgageInterest > 0) && (
                                                             <>
-                                                                <p className="font-semibold">▸ 소득공제</p>
+                                                                <p className="font-bold">▸ 소득공제</p>
                                                                 {inputs.housingSubscription > 0 && inputs.salary <= 70000000 && (
                                                                     <p>주택청약저축: {formatNumber(Math.min(inputs.housingSubscription, 3000000))}원 × 40% (연간 납입액 한도 300만원)</p>
                                                                 )}
@@ -1948,7 +1948,7 @@ export default function CalculatorPage() {
                                                         )}
                                                         {inputs.monthlyRent > 0 && (
                                                             <>
-                                                                <p className="font-semibold border-t border-black pt-1 mt-2">▸ 세액공제</p>
+                                                                <p className="font-bold border-t border-black pt-1 mt-2">▸ 세액공제</p>
                                                                 <p>월세: {formatNumber(Math.min(inputs.monthlyRent, 10000000))}원 × {inputs.salary <= 55000000 ? "17%" : "15%"} (한도 1,000만원)</p>
                                                             </>
                                                         )}
@@ -2091,7 +2091,7 @@ export default function CalculatorPage() {
                                                     <div className="text-sm space-y-1">
                                                         {(inputs.pensionSavings > 0 || inputs.irp > 0 || inputs.isaTransfer > 0) && (
                                                             <>
-                                                                <p className="font-semibold">▸ 연금계좌</p>
+                                                                <p className="font-bold">▸ 연금계좌</p>
                                                                 {inputs.pensionSavings > 0 && (
                                                                     <p>연금저축: {formatNumber(Math.min(inputs.pensionSavings, 6000000))}원 × 12% (한도 600만원)</p>
                                                                 )}
@@ -2105,7 +2105,7 @@ export default function CalculatorPage() {
                                                         )}
                                                         {(inputs.generalInsurance > 0 || inputs.disabledInsurance > 0) && (
                                                             <>
-                                                                <p className="font-semibold border-t border-black pt-1 mt-2">▸ 보장성 보험료</p>
+                                                                <p className="font-bold border-t border-black pt-1 mt-2">▸ 보장성 보험료</p>
                                                                 {inputs.generalInsurance > 0 && (
                                                                     <p>일반 보장성 보험: {formatNumber(Math.min(inputs.generalInsurance, 1000000))}원 × 12% (한도 100만원)</p>
                                                                 )}
@@ -2315,7 +2315,7 @@ export default function CalculatorPage() {
                                                                 <>
                                                                     {inputs.politicalDonation > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold">▸ 정치자금 기부금</p>
+                                                                            <p className="font-bold">▸ 정치자금 기부금</p>
                                                                             {Math.min(inputs.politicalDonation, 100000) > 0 && (
                                                                                 <p>　{formatNumber(Math.min(inputs.politicalDonation, 100000))}원 × 100/110 = <span className="font-bold text-blue-600">{formatNumber(Math.round(politicalBase))}원</span></p>
                                                                             )}
@@ -2329,7 +2329,7 @@ export default function CalculatorPage() {
                                                                     )}
                                                                     {inputs.hometownDonation > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 고향사랑 기부금</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 고향사랑 기부금</p>
                                                                             {Math.min(hometownLimited, 100000) > 0 && (
                                                                                 <p>　{formatNumber(Math.min(hometownLimited, 100000))}원 × 100/110 = <span className="font-bold text-blue-600">{formatNumber(Math.round(hometownBase))}원</span></p>
                                                                             )}
@@ -2340,7 +2340,7 @@ export default function CalculatorPage() {
                                                                     )}
                                                                     {inputs.hometownDisaster > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 고향사랑 특별재난지역</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 고향사랑 특별재난지역</p>
                                                                             {Math.min(hometownDisasterLimited, 100000) > 0 && (
                                                                                 <p>　{formatNumber(Math.min(hometownDisasterLimited, 100000))}원 × 100/110 = <span className="font-bold text-green-600">{formatNumber(Math.round(disasterBase))}원</span></p>
                                                                             )}
@@ -2351,7 +2351,7 @@ export default function CalculatorPage() {
                                                                     )}
                                                                     {inputs.specialDonation > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 특례기부금</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 특례기부금</p>
                                                                             {Math.min(inputs.specialDonation, 10000000) > 0 && (
                                                                                 <p>　{formatNumber(Math.min(inputs.specialDonation, 10000000))}원 × 15% = <span className="font-bold text-blue-600">{formatNumber(Math.round(special15))}원</span></p>
                                                                             )}
@@ -2362,7 +2362,7 @@ export default function CalculatorPage() {
                                                                     )}
                                                                     {inputs.employeeDonation > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 우리사주조합 기부금</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 우리사주조합 기부금</p>
                                                                             <p>　한도: 소득의 30% = {formatNumber(Math.round(employeeLimit))}원</p>
                                                                             {employee15 > 0 && (
                                                                                 <p>　{formatNumber(Math.min(employeeLimited, 10000000))}원 × 15% = <span className="font-bold text-blue-600">{formatNumber(Math.round(employee15))}원</span></p>
@@ -2374,7 +2374,7 @@ export default function CalculatorPage() {
                                                                     )}
                                                                     {inputs.designatedDonation > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 일반기부금 (종교단체 외)</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 일반기부금 (종교단체 외)</p>
                                                                             <p>　한도: 소득의 30% = {formatNumber(Math.round(designatedLimit))}원</p>
                                                                             {designated15 > 0 && (
                                                                                 <p>　{formatNumber(Math.min(designatedLimited, 10000000))}원 × 15% = <span className="font-bold text-blue-600">{formatNumber(Math.round(designated15))}원</span></p>
@@ -2386,7 +2386,7 @@ export default function CalculatorPage() {
                                                                     )}
                                                                     {inputs.religiousDonation > 0 && (
                                                                         <>
-                                                                            <p className="font-semibold border-t border-black pt-1 mt-2">▸ 일반기부금 (종교단체)</p>
+                                                                            <p className="font-bold border-t border-black pt-1 mt-2">▸ 일반기부금 (종교단체)</p>
                                                                             <p>　한도: 소득의 10% = {formatNumber(Math.round(religiousLimit))}원</p>
                                                                             {religious15 > 0 && (
                                                                                 <p>　{formatNumber(Math.min(religiousLimited, 10000000))}원 × 15% = <span className="font-bold text-blue-600">{formatNumber(Math.round(religious15))}원</span></p>
@@ -2523,7 +2523,7 @@ export default function CalculatorPage() {
                                                     <div className="text-sm space-y-1">
                                                         {inputs.childrenOver8 > 0 && (
                                                             <>
-                                                                <p className="font-semibold">▸ 만 8세 이상 자녀</p>
+                                                                <p className="font-bold">▸ 만 8세 이상 자녀</p>
                                                                 {inputs.childrenOver8 === 1 && (
                                                                     <p>　1명: <span className="font-bold text-blue-600">250,000원</span></p>
                                                                 )}
@@ -2537,7 +2537,7 @@ export default function CalculatorPage() {
                                                         )}
                                                         {inputs.birthAdoption !== "none" && (
                                                             <>
-                                                                <p className="font-semibold border-t border-black pt-1 mt-2">▸ 출생·입양</p>
+                                                                <p className="font-bold border-t border-black pt-1 mt-2">▸ 출생·입양</p>
                                                                 {inputs.birthAdoption === "first" && (
                                                                     <p>　첫째: <span className="font-bold text-green-600">300,000원</span></p>
                                                                 )}
@@ -2659,17 +2659,17 @@ export default function CalculatorPage() {
                                         {formatNumber(totalRefund)}원
                                     </div>
                                     <div className="text-xs text-gray-500 space-y-1">
-                                        <p className="font-semibold text-gray-400">▸ 소득세</p>
+                                        <p className="font-bold text-gray-400">▸ 소득세</p>
                                         <p className="pl-2">결정세액: {formatNumber(result.finalTax)}원</p>
                                         <p className="pl-2">기납부세액: -{formatNumber(result.withheldTax)}원</p>
                                         <p className="pl-2 text-neo-cyan">→ 소득세 환급: {formatNumber(incomeTaxRefund)}원</p>
 
-                                        <p className="font-semibold text-gray-400 pt-1">▸ 지방소득세</p>
+                                        <p className="font-bold text-gray-400 pt-1">▸ 지방소득세</p>
                                         <p className="pl-2">결정세액 (10%): {formatNumber(localTaxDue)}원</p>
                                         <p className="pl-2">기납부세액: -{formatNumber(inputs.localIncomeTax)}원</p>
                                         <p className="pl-2 text-neo-cyan">→ 지방소득세 환급: {formatNumber(localTaxRefund)}원</p>
 
-                                        <p className="border-t border-gray-600 pt-1 mt-1 font-semibold">
+                                        <p className="border-t border-gray-600 pt-1 mt-1 font-bold">
                                             총 환급액: {formatNumber(incomeTaxRefund)} + {formatNumber(localTaxRefund)} = {formatNumber(totalRefund)}원
                                         </p>
                                     </div>
@@ -2702,7 +2702,7 @@ export default function CalculatorPage() {
 
                                 {/* 3. 근로소득금액 */}
                                 <div className="flex justify-between items-center bg-neo-yellow/30 p-2 -mx-2 border-y border-black">
-                                    <span className="font-semibold">③ 근로소득금액</span>
+                                    <span className="font-bold">③ 근로소득금액</span>
                                     <span className="font-bold">{formatNumber(result.earnedIncome)}원</span>
                                 </div>
 
@@ -2714,7 +2714,7 @@ export default function CalculatorPage() {
 
                                 {/* 5. 과세표준 */}
                                 <div className="flex justify-between items-center bg-neo-yellow/30 p-2 -mx-2 border-y border-black">
-                                    <span className="font-semibold">⑤ 과세표준</span>
+                                    <span className="font-bold">⑤ 과세표준</span>
                                     <span className="font-bold">{formatNumber(result.taxableIncome)}원</span>
                                 </div>
 
@@ -2732,7 +2732,7 @@ export default function CalculatorPage() {
 
                                 {/* 8. 결정세액 */}
                                 <div className="flex justify-between items-center bg-neo-yellow/30 p-2 -mx-2 border-y border-black">
-                                    <span className="font-semibold">⑧ 결정세액</span>
+                                    <span className="font-bold">⑧ 결정세액</span>
                                     <span className="font-bold">{formatNumber(result.finalTax)}원</span>
                                 </div>
 

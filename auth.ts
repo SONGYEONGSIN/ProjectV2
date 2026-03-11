@@ -11,6 +11,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     pages: {
         signIn: "/login",
     },
+    session: {
+        strategy: "jwt",
+        maxAge: 30 * 60, // 30분 (초 단위)
+    },
+    jwt: {
+        maxAge: 30 * 60, // 30분
+    },
     callbacks: {
         async redirect({ url, baseUrl }) {
             // 로그인 후 대시보드로 리다이렉트

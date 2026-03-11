@@ -147,7 +147,7 @@ export default function LandingPage() {
                     </p>
                 </motion.div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <motion.div
                         whileHover={{ y: -5 }}
                         className="bg-white border-[3px] border-black p-6 shadow-[6px_6px_0px_0px_#00D9FF]"
@@ -250,7 +250,7 @@ export default function LandingPage() {
                     </p>
                 </motion.div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {reviews.map((review, index) => (
                         <motion.div
                             key={review.name}
@@ -309,7 +309,7 @@ export default function LandingPage() {
                         </h2>
                     </motion.div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {stats.map((stat, index) => (
                             <motion.div
                                 key={stat.label}

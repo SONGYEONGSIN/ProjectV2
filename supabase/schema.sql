@@ -3,6 +3,29 @@
 -- Supabase SQL Editor에서 실행하세요
 -- =============================================
 
+-- =============================================
+-- 회원 관리 (Users)
+-- =============================================
+CREATE TABLE IF NOT EXISTS users (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT,
+  image TEXT,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+  provider TEXT DEFAULT 'google',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  last_login_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all operations for anon"
+  ON users FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
 -- Admin 데이터 (연도별 세금 기초자료)
 CREATE TABLE IF NOT EXISTS admin_data (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,

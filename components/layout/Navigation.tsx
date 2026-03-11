@@ -123,8 +123,8 @@ export function Navigation() {
                         {session ? (
                             // 로그인 상태: 모든 페이지에서 사용자 정보 표시
                             <>
-                                <div className="hidden md:flex items-center gap-2">
-                                    <span className="font-bold text-sm">
+                                <div className="flex items-center gap-2">
+                                    <span className="hidden md:inline font-bold text-sm">
                                         {session.user?.name || "사용자"}님
                                     </span>
                                     <div className={clsx(
@@ -154,7 +154,7 @@ export function Navigation() {
                                 ) : null}
                                 <button
                                     onClick={() => signOut({ callbackUrl: "/" })}
-                                    className="hidden md:block px-3 py-1.5 font-bold text-sm border-2 border-black bg-white hover:bg-red-100 shadow-[2px_2px_0px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
+                                    className="px-3 py-1.5 font-bold text-sm border-2 border-black bg-white hover:bg-red-100 shadow-[2px_2px_0px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
                                 >
                                     로그아웃
                                 </button>

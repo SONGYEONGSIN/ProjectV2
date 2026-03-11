@@ -130,7 +130,7 @@ export default function TermsPage() {
                 <div className="border-t-2 border-gray-200 pt-6 mt-8">
                     <p className="text-sm text-gray-500 text-center">
                         본 약관에 대한 문의사항은{" "}
-                        <span className="font-bold text-neo-orange">customer@taxai.com</span>
+                        <span className="font-bold text-neo-orange">ysong2526@gmail.com</span>
                         으로 연락 주시기 바랍니다.
                     </p>
                 </div>

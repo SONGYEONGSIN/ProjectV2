@@ -38,7 +38,7 @@ export default function PrivacyPage() {
                         <li>회원 식별 및 회원제 서비스 이용</li>
                         <li>연말정산 예상 환급액 계산 서비스 제공</li>
                         <li>AI 기반 맞춤형 절세 전략 분석</li>
-                        <li>카드사·금융기관 데이터 연동 서비스</li>
+
                         <li>서비스 개선 및 신규 기능 개발</li>
                         <li>고객 문의 응대 및 공지사항 전달</li>
                     </ul>
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
                         <ul className="list-disc list-inside space-y-1 text-gray-700 ml-4 mt-2">
                             <li>이용자가 사전에 동의한 경우</li>
                             <li>법령에 의해 요구되는 경우</li>
-                            <li>카드사 연동 시 해당 금융기관과의 데이터 교환</li>
+
                         </ul>
                     </div>
                 </section>
@@ -176,8 +176,7 @@ export default function PrivacyPage() {
                         <p className="font-bold mb-2">개인정보 보호책임자</p>
                         <ul className="text-gray-700 space-y-1">
                             <li>담당: 개인정보보호팀</li>
-                            <li>이메일: privacy@taxai.com</li>
-                            <li>전화: 02-1234-5678</li>
+                            <li>이메일: ysong2526@gmail.com</li>
                         </ul>
                     </div>
                 </section>
@@ -185,7 +184,7 @@ export default function PrivacyPage() {
                 <div className="border-t-2 border-gray-200 pt-6 mt-8">
                     <p className="text-sm text-gray-500 text-center">
                         개인정보 처리에 관한 문의사항은{" "}
-                        <span className="font-bold text-neo-cyan">privacy@taxai.com</span>
+                        <span className="font-bold text-neo-cyan">ysong2526@gmail.com</span>
                         으로 연락 주시기 바랍니다.
                     </p>
                 </div>

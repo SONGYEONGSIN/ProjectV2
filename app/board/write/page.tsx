@@ -127,7 +127,7 @@ export default function BoardWritePage() {
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             placeholder="제목을 입력하세요"
-                            className="flex-1 p-4 border-[3px] border-black font-bold text-lg focus:outline-none focus:shadow-[4px_4px_0px_0px_#FFB800] transition-shadow bg-white"
+                            className="flex-1 min-w-0 p-4 border-[3px] border-black font-bold text-lg focus:outline-none focus:shadow-[4px_4px_0px_0px_#FFB800] transition-shadow bg-white"
                             maxLength={100}
                         />
                     </div>

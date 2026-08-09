@@ -3,26 +3,7 @@
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/Button";
-
-function LogoMark() {
-  return (
-    <svg
-      width={36}
-      height={36}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="square"
-      aria-hidden="true"
-    >
-      <path d="M5 4 L19 4" />
-      <path d="M5 12 L19 12" />
-      <path d="M5 20 L19 20" />
-      <path d="M12 4 L12 20" />
-    </svg>
-  );
-}
+import { BrandMark } from "@/components/layout/Brand";
 
 function GoogleIcon() {
   return (
@@ -71,7 +52,7 @@ export default function LoginPage() {
             className="inline-flex items-center gap-2 text-hi hover:opacity-80 transition-opacity mb-8"
             aria-label="taxback365 홈"
           >
-            <LogoMark />
+            <BrandMark size={36} />
           </Link>
           <h1 className="text-h2 text-hi">다시 만나 반가워요</h1>
           <p className="text-body text-mid mt-2">

@@ -77,7 +77,7 @@ export const borders = {
 export const typography = {
   baseFontSize: "14px",
   fontDisplay:
-    'var(--font-montserrat-loaded), "Montserrat", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+    'var(--font-inter-loaded), "Inter", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
   fontBody:
     'var(--font-inter-loaded), "Inter", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
   fontMono:

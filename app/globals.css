@@ -232,13 +232,17 @@
   --shadow-subtle-3: var(--shadow-subtle-3);
 
   /* Fonts —
-   *  display: Montserrat (영문 한정, 한글은 Apple SD Gothic Neo/Malgun Gothic fallback)
+   *  display: Inter (한글은 Apple SD Gothic Neo/Malgun Gothic fallback)
    *  body:    Inter (영문/숫자) + system Korean fallback
    *  mono:    system mono stack
    */
+  /* display 도 Inter 다. Montserrat 는 weight ["500","600"] 만 로드돼 상한이
+   * 600 이었고, 서류 조판의 표제는 800 을 쓴다. Inter 는 app/layout.tsx 에서
+   * weight 미지정 = 가변 폰트라 800 이 이미 로드돼 있어 추가 요청이 0 이다.
+   * 없는 웨이트를 지정하면 브라우저가 합성 볼드를 만들어 획이 뭉갠다. */
   --font-display:
-    var(--font-montserrat-loaded), "Montserrat", "Apple SD Gothic Neo",
-    "Malgun Gothic", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    var(--font-inter-loaded), "Inter", "Apple SD Gothic Neo", "Malgun Gothic",
+    system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body:
     var(--font-inter-loaded), "Inter", "Apple SD Gothic Neo", "Malgun Gothic",
     system-ui, -apple-system, BlinkMacSystemFont, sans-serif;

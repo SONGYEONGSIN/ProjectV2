@@ -64,7 +64,12 @@ const PAIRS = [
   ["--color-rose", "--color-base", 4.5, "에러 텍스트"],
   ["--color-amber", "--color-base", 4.5, "경고 텍스트"],
   ["--color-sky", "--color-base", 4.5, "정보 텍스트"],
-  ["--color-edge", "--color-base", 3.0, "폼 컨트롤 경계 (1.4.11)"],
+  // 경계선은 역할이 둘로 갈린다. WCAG 1.4.11(3:1)은 "사용자가 조작하는
+  // 컴포넌트의 경계"에만 걸리므로 edge-strong 이 그 대상이고, edge 는 표의
+  // 행 구분 같은 장식 괘선이라 3:1 을 요구하지 않는다. 다만 아예 안 보이면
+  // 조판이 무너지므로 최소 가시성만 확인한다.
+  ["--color-edge-strong", "--color-base", 3.0, "폼 컨트롤 경계 (1.4.11)"],
+  ["--color-edge", "--color-base", 1.2, "행 구분 괘선 (장식)"],
 ];
 
 const rows = [];

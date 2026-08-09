@@ -1053,7 +1053,7 @@ export default function DashboardPage() {
       {showAiModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-base/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-scrim"
             onClick={() => !aiAdviceLoading && setShowAiModal(false)}
           />
           <div className="relative w-full max-w-2xl max-h-[80vh] bg-surface rounded-lg shadow-md overflow-hidden flex flex-col">

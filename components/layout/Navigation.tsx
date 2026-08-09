@@ -103,7 +103,7 @@ export function Navigation() {
 
   return (
     <>
-      <nav className="sticky top-0 z-40 h-16 bg-base/80 backdrop-blur-md border-b border-edge">
+      <nav className="sticky top-0 z-40 h-16 bg-base border-b border-edge">
         <div className="container mx-auto h-full px-4 md:px-6 max-w-[1200px] flex items-center justify-between">
           <Link
             href="/"

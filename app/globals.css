@@ -35,34 +35,42 @@
   --color-linear-gray-light: #737373;
 
   /* ───────────────────────────────────────────────────────────────
-   * Premium Dark Fintech (v3) — 새 비주얼 아이덴티티
-   * off-black base + elevated surfaces + electric accent accent + mono 숫자.
+   * Swiss Grid — 서류 조판 (Document as Layout)
+   *
+   * 백지 지면 + 순흑 타이포 + 신호적색. 면이 아니라 "선"이 구획한다.
+   * 선 위계는 색이 아니라 border-width 와 위치가 만들므로 전용 토큰을 두지
+   * 않는다 — 문서 경계 = border-b-2 border-hi / 절 구획 = border-t border-hi /
+   * 행 구분 = border-b border-edge.
+   *
+   * 모든 값은 scripts/contrast-check.mjs 로 WCAG 실측했다(본문 4.5 · UI 3.0).
    * ─────────────────────────────────────────────────────────────── */
-  --color-base: #0b0c0f;
-  --color-ink: #0b0c0f; /* accent 버튼 위 어두운 텍스트 (text-base 폰트크기 충돌 회피) */
-  --color-surface: #14161b;
-  --color-surface-2: #1b1f27;
-  --color-surface-3: #232833;
-  --color-edge: #23262e;
-  --color-edge-strong: #333844;
-  --color-hi: #f4f6f9;
-  --color-mid: #a7aebc;
-  --color-dim: #6b7280;
-  --color-accent: #35e4a4;
-  --color-accent-ink: #1e5c48;
-  --color-rose: #fb7185;
-  --color-amber: #fbbf24;
-  --color-sky: #60a5fa;
+  --color-base: #ffffff; /* 지면 */
+  --color-ink: #ffffff; /* accent 면 위 텍스트 — 다크 시절과 반전된다 */
+  --color-surface: #ededed; /* 얕은 면 (판권면 등) · base 대비 1.17:1 */
+  --color-surface-2: #e4e4e4; /* 표 합계 행 강조 · 1.27:1 */
+  --color-surface-3: #dbdbdb; /* 3단계 면 (희소) · 1.38:1 */
+  --color-edge: #d4d4d4; /* 행 구분 괘선(장식선) · 1.48:1 */
+  --color-edge-strong: #949494; /* 폼 컨트롤 경계 · 3.03:1 — WCAG 1.4.11 */
+  --color-hi: #0a0a0a; /* 본문·구획선·문서 경계선 · 19.80:1 */
+  --color-mid: #5f5f5f; /* 보조 텍스트 · 6.39:1 */
+  --color-dim: #767676; /* 3차 텍스트 · 4.54:1 (AA 하한) */
+  --color-accent: #d92d33; /* CTA 면·상태 표식·포커스 링 · 4.80:1 */
+  --color-accent-ink: #c0242a; /* 소형 accent 텍스트 전용 · 5.95:1 */
+  --color-rose: #8c1d13; /* alert — accent 와 명도로 구분 · 9.13:1 */
+  --color-amber: #8a5a00; /* 주의 · 5.93:1 */
+  --color-sky: #0b57d0; /* 정보 · 6.39:1 */
 
-  /* Gradients */
-  --gradient-linear-gray-dark: linear-gradient(
-    rgb(82, 82, 82),
-    rgb(23, 23, 23)
-  );
-  --gradient-linear-gray-light: linear-gradient(
-    rgb(115, 115, 115),
-    rgb(38, 38, 38)
-  );
+  /* 신규 — 다크 팔레트에는 필요 없던 것들 */
+  --color-on-accent: #ffffff; /* accent 면 위 텍스트 · 4.80:1 */
+  /* 모달 백드롭. base 가 흰색이 된 뒤로 bg-base/80 은 "흰 스크림 위 흰 모달"이
+   * 되어 경계가 사라진다. 타입체크·린트·빌드 어디에도 걸리지 않는 파손이라
+   * 전용 토큰으로 분리한다. */
+  --color-scrim: rgba(10, 10, 10, 0.5);
+
+  /* Gradients — 제거됨.
+   * Dub 리브랜드 시절 정의였고 참조가 0건인 죽은 토큰이었다. 서류 조판에서
+   * 그라데이션은 이물이므로 되살리지 않는다. (--color-linear-gray-* 두 색은
+   * 별개 dead code 라 이번 범위 밖으로 남겨 둔다.) */
 
   /* Surface aliases (페이지 의미 매핑) */
   --background: var(--color-canvas-white);
@@ -185,6 +193,8 @@
   --color-rose: var(--color-rose);
   --color-amber: var(--color-amber);
   --color-sky: var(--color-sky);
+  --color-on-accent: var(--color-on-accent);
+  --color-scrim: var(--color-scrim);
 
   /* Semantic aliases */
   --color-background: var(--background);

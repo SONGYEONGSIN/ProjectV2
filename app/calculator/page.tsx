@@ -1866,7 +1866,7 @@ export default function CalculatorPage() {
                                       ① 신용카드:{" "}
                                       {formatNumber(inputs.creditCard)}원 중{" "}
                                       {formatNumber(creditUsed)}원 소진 →{" "}
-                                      <span className="font-bold text-blue-600">
+                                      <span className="font-bold text-accent-ink">
                                         초과 {formatNumber(creditExcess)}원 ×
                                         15% = {formatNumber(creditDeduction)}원
                                       </span>
@@ -1877,7 +1877,7 @@ export default function CalculatorPage() {
                                       ② 직불카드:{" "}
                                       {formatNumber(inputs.debitCard)}원 중{" "}
                                       {formatNumber(debitUsed)}원 소진 →{" "}
-                                      <span className="font-bold text-blue-600">
+                                      <span className="font-bold text-accent-ink">
                                         초과 {formatNumber(debitExcess)}원 × 30%
                                         = {formatNumber(debitDeduction)}원
                                       </span>
@@ -1887,7 +1887,7 @@ export default function CalculatorPage() {
                                     <p>
                                       ③ 현금영수증: {formatNumber(inputs.cash)}
                                       원 중 {formatNumber(cashUsed)}원 소진 →{" "}
-                                      <span className="font-bold text-blue-600">
+                                      <span className="font-bold text-accent-ink">
                                         초과 {formatNumber(cashExcess)}원 × 30%
                                         = {formatNumber(cashDeduction)}원
                                       </span>
@@ -1898,7 +1898,7 @@ export default function CalculatorPage() {
                                       ④ 대중교통:{" "}
                                       {formatNumber(inputs.publicTransport)}원
                                       중 {formatNumber(transportUsed)}원 소진 →{" "}
-                                      <span className="font-bold text-green-600">
+                                      <span className="font-bold text-accent-ink">
                                         초과 {formatNumber(transportExcess)}원 ×
                                         40% = {formatNumber(transportDeduction)}
                                         원
@@ -1910,7 +1910,7 @@ export default function CalculatorPage() {
                                       ⑤ 전통시장:{" "}
                                       {formatNumber(inputs.traditionalMarket)}원
                                       중 {formatNumber(marketUsed)}원 소진 →{" "}
-                                      <span className="font-bold text-green-600">
+                                      <span className="font-bold text-accent-ink">
                                         초과 {formatNumber(marketExcess)}원 ×
                                         40% = {formatNumber(marketDeduction)}원
                                       </span>
@@ -1920,7 +1920,7 @@ export default function CalculatorPage() {
                                     <p>
                                       ⑥ 문화체육: {formatNumber(inputs.culture)}
                                       원 중 {formatNumber(cultureUsed)}원 소진 →{" "}
-                                      <span className="font-bold text-green-600">
+                                      <span className="font-bold text-accent-ink">
                                         초과 {formatNumber(cultureExcess)}원 ×
                                         30% = {formatNumber(cultureDeduction)}원
                                       </span>
@@ -2414,7 +2414,7 @@ export default function CalculatorPage() {
                                           {formatNumber(inputs.infertility)}원
                                           중 {formatNumber(infertilityUsed)}원
                                           소진) →{" "}
-                                          <span className="font-bold text-green-600">
+                                          <span className="font-bold text-accent-ink">
                                             초과{" "}
                                             {formatNumber(infertilityExcess)}원
                                             × 30% ={" "}
@@ -2429,7 +2429,7 @@ export default function CalculatorPage() {
                                           {formatNumber(inputs.premature)}원 중{" "}
                                           {formatNumber(prematureUsed)}원 소진)
                                           →{" "}
-                                          <span className="font-bold text-green-600">
+                                          <span className="font-bold text-accent-ink">
                                             초과 {formatNumber(prematureExcess)}
                                             원 × 20% ={" "}
                                             {formatNumber(prematureDeduction)}원
@@ -2444,7 +2444,7 @@ export default function CalculatorPage() {
                                           )}
                                           원 중 {formatNumber(selfUsed)}원 소진)
                                           →{" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             초과 {formatNumber(selfExcess)}원 ×
                                             15% = {formatNumber(selfDeduction)}
                                             원
@@ -2456,13 +2456,13 @@ export default function CalculatorPage() {
                                           ④ 그 밖의 부양가족 (
                                           {formatNumber(inputs.otherFamily)}원
                                           중 {formatNumber(otherUsed)}원 소진) →{" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             초과 {formatNumber(otherExcess)}원 ×
                                             15% = {formatNumber(otherDeduction)}
                                             원
                                           </span>
                                           {otherExcess > 7000000 && (
-                                            <span className="text-red-500">
+                                            <span className="text-rose">
                                               {" "}
                                               (700만원 한도 적용)
                                             </span>
@@ -2776,7 +2776,7 @@ export default function CalculatorPage() {
                               />
                               {inputs.salary > 70000000 &&
                                 inputs.housingSubscription > 0 && (
-                                  <p className="text-xs text-red-500 font-bold">
+                                  <p className="text-xs text-rose font-bold">
                                     ⚠️ 총급여 7천만원 초과로 공제 불가
                                   </p>
                                 )}
@@ -2875,7 +2875,7 @@ export default function CalculatorPage() {
                                   )}
                                 {inputs.housingSubscription > 0 &&
                                   inputs.salary > 70000000 && (
-                                    <p className="text-red-500">
+                                    <p className="text-rose">
                                       주택청약저축: 총급여 7천만원 초과로 공제
                                       제외
                                     </p>
@@ -2986,7 +2986,7 @@ export default function CalculatorPage() {
                               )}
                             {inputs.housingSubscription > 0 &&
                               inputs.salary > 70000000 && (
-                                <p className="pl-4 text-xs text-red-500">
+                                <p className="pl-4 text-xs text-rose">
                                   - 주택청약저축: 총급여 7천만원 초과로 공제
                                   제외
                                 </p>
@@ -3615,7 +3615,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 100/110 ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(politicalBase),
                                             )}
@@ -3627,7 +3627,7 @@ export default function CalculatorPage() {
                                         <p>
                                           　{formatNumber(politicalExcess15)}원
                                           × 15% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(
                                                 politicalExcess15 * 0.15,
@@ -3641,7 +3641,7 @@ export default function CalculatorPage() {
                                         <p>
                                           　{formatNumber(politicalExcess25)}원
                                           × 25% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(
                                                 politicalExcess25 * 0.25,
@@ -3666,7 +3666,7 @@ export default function CalculatorPage() {
                                             Math.min(hometownLimited, 100000),
                                           )}
                                           원 × 100/110 ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(hometownBase),
                                             )}
@@ -3685,7 +3685,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 15% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(hometownExcess),
                                             )}
@@ -3713,7 +3713,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 100/110 ={" "}
-                                          <span className="font-bold text-green-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(disasterBase),
                                             )}
@@ -3734,7 +3734,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 30% ={" "}
-                                          <span className="font-bold text-green-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(disasterExcess),
                                             )}
@@ -3762,7 +3762,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 15% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(special15),
                                             )}
@@ -3783,7 +3783,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 30% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(special30),
                                             )}
@@ -3812,7 +3812,7 @@ export default function CalculatorPage() {
                                             Math.min(employeeLimited, 10000000),
                                           )}
                                           원 × 15% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(employee15),
                                             )}
@@ -3830,7 +3830,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 30% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(employee30),
                                             )}
@@ -3862,7 +3862,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 15% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(designated15),
                                             )}
@@ -3880,7 +3880,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 30% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(designated30),
                                             )}
@@ -3912,7 +3912,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 15% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(religious15),
                                             )}
@@ -3930,7 +3930,7 @@ export default function CalculatorPage() {
                                             ),
                                           )}
                                           원 × 30% ={" "}
-                                          <span className="font-bold text-blue-600">
+                                          <span className="font-bold text-accent-ink">
                                             {formatNumber(
                                               Math.round(religious30),
                                             )}
@@ -4343,7 +4343,7 @@ export default function CalculatorPage() {
                                 {inputs.childrenOver8 === 1 && (
                                   <p>
                                     　1명:{" "}
-                                    <span className="font-bold text-blue-600">
+                                    <span className="font-bold text-accent-ink">
                                       250,000원
                                     </span>
                                   </p>
@@ -4351,7 +4351,7 @@ export default function CalculatorPage() {
                                 {inputs.childrenOver8 === 2 && (
                                   <p>
                                     　2명:{" "}
-                                    <span className="font-bold text-blue-600">
+                                    <span className="font-bold text-accent-ink">
                                       550,000원
                                     </span>
                                   </p>
@@ -4360,7 +4360,7 @@ export default function CalculatorPage() {
                                   <p>
                                     　{inputs.childrenOver8}명: 550,000원 + (
                                     {inputs.childrenOver8} - 2) × 400,000원 ={" "}
-                                    <span className="font-bold text-blue-600">
+                                    <span className="font-bold text-accent-ink">
                                       {formatNumber(
                                         550000 +
                                           (inputs.childrenOver8 - 2) * 400000,
@@ -4379,7 +4379,7 @@ export default function CalculatorPage() {
                                 {inputs.birthAdoption === "first" && (
                                   <p>
                                     　첫째:{" "}
-                                    <span className="font-bold text-green-600">
+                                    <span className="font-bold text-accent-ink">
                                       300,000원
                                     </span>
                                   </p>
@@ -4387,7 +4387,7 @@ export default function CalculatorPage() {
                                 {inputs.birthAdoption === "second" && (
                                   <p>
                                     　둘째:{" "}
-                                    <span className="font-bold text-green-600">
+                                    <span className="font-bold text-accent-ink">
                                       500,000원
                                     </span>
                                   </p>
@@ -4395,7 +4395,7 @@ export default function CalculatorPage() {
                                 {inputs.birthAdoption === "third1" && (
                                   <p>
                                     　셋째 이상 1명: 700,000원 × 1명 ={" "}
-                                    <span className="font-bold text-green-600">
+                                    <span className="font-bold text-accent-ink">
                                       700,000원
                                     </span>
                                   </p>
@@ -4403,7 +4403,7 @@ export default function CalculatorPage() {
                                 {inputs.birthAdoption === "third2" && (
                                   <p>
                                     　셋째 이상 2명: 700,000원 × 2명 ={" "}
-                                    <span className="font-bold text-green-600">
+                                    <span className="font-bold text-accent-ink">
                                       1,400,000원
                                     </span>
                                   </p>
@@ -4411,7 +4411,7 @@ export default function CalculatorPage() {
                                 {inputs.birthAdoption === "third3" && (
                                   <p>
                                     　셋째 이상 3명: 700,000원 × 3명 ={" "}
-                                    <span className="font-bold text-green-600">
+                                    <span className="font-bold text-accent-ink">
                                       2,100,000원
                                     </span>
                                   </p>
@@ -4617,7 +4617,7 @@ export default function CalculatorPage() {
                 {/* 2. 근로소득공제 */}
                 <div className="flex justify-between items-center">
                   <span className="text-mid">② 근로소득공제</span>
-                  <span className="font-bold text-blue-600">
+                  <span className="font-bold text-accent-ink">
                     -{formatNumber(result.incomeDeduction)}원
                   </span>
                 </div>
@@ -4633,7 +4633,7 @@ export default function CalculatorPage() {
                 {/* 4. 소득공제 */}
                 <div className="flex justify-between items-center">
                   <span className="text-mid">④ 소득공제 합계</span>
-                  <span className="font-bold text-blue-600">
+                  <span className="font-bold text-accent-ink">
                     -{formatNumber(result.totalIncomeDeduction)}원
                   </span>
                 </div>
@@ -4657,7 +4657,7 @@ export default function CalculatorPage() {
                 {/* 7. 세액공제 */}
                 <div className="flex justify-between items-center">
                   <span className="text-mid">⑦ 세액공제 합계</span>
-                  <span className="font-bold text-blue-600">
+                  <span className="font-bold text-accent-ink">
                     -{formatNumber(result.totalTaxCredit)}원
                   </span>
                 </div>
@@ -4673,13 +4673,13 @@ export default function CalculatorPage() {
                 {/* 기납부세액 */}
                 <div className="flex justify-between items-center">
                   <span className="text-mid">기납부세액 (소득세)</span>
-                  <span className="font-bold text-blue-600">
+                  <span className="font-bold text-accent-ink">
                     -{formatNumber(result.withheldTax)}원
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-mid">기납부세액 (지방소득세)</span>
-                  <span className="font-bold text-blue-600">
+                  <span className="font-bold text-accent-ink">
                     -{formatNumber(inputs.localIncomeTax)}원
                   </span>
                 </div>
@@ -4696,7 +4696,7 @@ export default function CalculatorPage() {
               <div className="space-y-2 text-mid">
                 <div className="flex justify-between font-bold text-sm text-hi border-b border-edge-strong pb-1">
                   <span>소득공제 (④)</span>
-                  <span className="text-blue-600">
+                  <span className="text-accent-ink">
                     {formatNumber(result.totalIncomeDeduction)}원
                   </span>
                 </div>
@@ -4726,7 +4726,7 @@ export default function CalculatorPage() {
                 )}
                 <div className="flex justify-between font-bold text-sm text-hi border-b border-edge-strong pb-1 pt-2">
                   <span>세액공제 (⑦)</span>
-                  <span className="text-blue-600">
+                  <span className="text-accent-ink">
                     {formatNumber(result.totalTaxCredit)}원
                   </span>
                 </div>
@@ -4777,7 +4777,7 @@ export default function CalculatorPage() {
 
           <div className="mt-4 bg-surface border border-edge-strong p-4 text-sm">
             <h4 className="font-bold mb-2 flex items-center gap-2">
-              <AlertCircle size={16} className="text-red-500" />
+              <AlertCircle size={16} className="text-rose" />
               주의사항
             </h4>
             <p className="text-mid">

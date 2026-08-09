@@ -111,9 +111,17 @@ const files = ROOTS.filter((r) => {
   .flatMap((r) => walk(r))
   .filter((f) => !SKIP_PATHS.some((re) => re.test(f)));
 
+/**
+ * 블록 주석을 같은 길이의 공백으로 치환한다. 개행을 보존하므로 라인 번호가
+ * 어긋나지 않는다. 주석 안에서 옛 토큰을 "쓰지 말라"고 설명하는 문장까지
+ * 위반으로 잡으면 상시 실패하는 게이트가 되어 아무도 보지 않게 된다.
+ */
+const stripComments = (src) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+
 const violations = [];
 for (const file of files) {
-  const lines = readFileSync(file, "utf8").split("\n");
+  const lines = stripComments(readFileSync(file, "utf8")).split("\n");
   lines.forEach((line, i) => {
     for (const rule of active) {
       if (rule.re.test(line)) {

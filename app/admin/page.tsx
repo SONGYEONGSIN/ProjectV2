@@ -2312,7 +2312,7 @@ export default function AdminPage() {
       {showAddItemModal &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-base/80">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-scrim">
             <div className="bg-surface border border-edge p-6 max-w-md w-full mx-4 shadow-lg">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-black">수동 항목 추가</h3>
@@ -2549,7 +2549,7 @@ export default function AdminPage() {
       {showCameraModal &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-base/80">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-scrim">
             <div className="bg-surface border border-edge p-6 max-w-2xl w-full mx-4 shadow-lg max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4 pb-4 border-b border-edge-strong">
                 <h3 className="text-xl font-black">이미지 업로드 (OCR)</h3>
@@ -2915,7 +2915,7 @@ export default function AdminPage() {
       {showExcelModal &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-base/80">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-scrim">
             <div className="bg-surface border border-edge p-4 max-w-2xl w-full mx-4 shadow-lg">
               <div className="flex justify-between items-center mb-4">
                 <div>
@@ -3693,7 +3693,7 @@ export default function AdminPage() {
       {showCardExcelModal &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-base/80">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-scrim">
             <div className="bg-surface border border-edge p-6 max-w-2xl w-full mx-4 shadow-lg max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4 pb-4 border-b border-edge-strong">
                 <h3 className="text-xl font-black">엑셀 업로드</h3>
@@ -4047,7 +4047,7 @@ export default function AdminPage() {
         selectedItemDetails &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-base/80">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-scrim">
             <div className="bg-surface border border-edge p-6 max-w-2xl w-full mx-4 shadow-lg max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4 pb-4 border-b border-edge-strong">
                 <h3 className="text-xl font-black">
@@ -4130,7 +4130,7 @@ export default function AdminPage() {
         uncertainMarketItems.length > 0 &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-base/80">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-scrim">
             <div className="bg-surface border border-edge p-6 max-w-2xl w-full mx-4 shadow-lg max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4 pb-4 border-b border-edge-strong">
                 <h3 className="text-xl font-black">🏪 전통시장 확인</h3>

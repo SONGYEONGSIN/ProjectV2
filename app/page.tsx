@@ -72,14 +72,6 @@ export default function LandingPage() {
        * Hero — asymmetric split + ambient accent glow
        * ──────────────────────────────────────────────────────── */}
       <section className="relative w-full max-w-[1200px] mx-auto px-4 pt-20 md:pt-28 pb-16">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-28 -left-40 h-[560px] w-[560px] rounded-full blur-[130px] opacity-60"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(53,228,164,0.18), transparent 70%)",
-          }}
-        />
         <div className="relative grid lg:grid-cols-[1.05fr_0.95fr] gap-12 lg:gap-16 items-center">
           {/* left — copy */}
           <div className="flex flex-col items-start gap-6">
@@ -122,7 +114,7 @@ export default function LandingPage() {
 
           {/* right — preview card */}
           <div className="relative">
-            <div className="rounded-2xl border border-edge bg-surface p-6 md:p-7 shadow-[0_28px_70px_-24px_rgba(0,0,0,0.75)]">
+            <div className="rounded-2xl border border-edge bg-surface p-6 md:p-7">
               <div className="flex items-center justify-between">
                 <p className="text-caption font-medium uppercase tracking-[0.08em] text-dim">
                   실시간 환급 예상
@@ -202,14 +194,6 @@ export default function LandingPage() {
         <div className="grid md:grid-cols-2 gap-4">
           {/* featured */}
           <div className="md:row-span-2 flex flex-col justify-between gap-8 rounded-2xl border border-edge bg-surface p-7 relative overflow-hidden">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -bottom-24 -right-16 h-64 w-64 rounded-full blur-[90px] opacity-50"
-              style={{
-                background:
-                  "radial-gradient(circle, rgba(53,228,164,0.16), transparent 70%)",
-              }}
-            />
             <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-accent/10 text-accent">
               <Sparkles size={22} strokeWidth={1.75} />
             </div>
@@ -303,14 +287,6 @@ export default function LandingPage() {
        * ──────────────────────────────────────────────────────── */}
       <section className="w-full max-w-[1200px] mx-auto px-4 py-16">
         <div className="relative overflow-hidden rounded-2xl border border-edge bg-surface px-6 py-16 md:py-20 flex flex-col items-center text-center gap-6">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 -top-32 mx-auto h-72 w-[520px] rounded-full blur-[130px] opacity-60"
-            style={{
-              background:
-                "radial-gradient(circle, rgba(53,228,164,0.20), transparent 70%)",
-            }}
-          />
           <h2 className="relative text-h1 text-hi max-w-2xl">
             환급은 멀리 있지 않습니다.
             <br />

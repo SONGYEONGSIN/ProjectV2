@@ -10,8 +10,15 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   suffix?: React.ReactNode;
 }
 
+/**
+ * 기입란. 서류 조판이므로 라운드 없는 각진 경계이고, 면은 지면(base)과 같다 —
+ * 회색 면 위 입력은 문서가 아니라 앱 UI 로 읽힌다.
+ *
+ * 포커스 링은 전역 :focus-visible outline 이 담당하므로 ring-<색>/30 을 두지
+ * 않는다. 30% 알파 링은 흰 배경에서 3:1 미달이다.
+ */
 const baseField =
-  "w-full h-10 px-3 rounded-md bg-surface text-hi text-body placeholder:text-dim transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/30";
+  "w-full h-10 px-3 bg-base text-hi text-body placeholder:text-dim transition-colors duration-150";
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   function Input(
@@ -34,9 +41,11 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const errorId = errorText ? `${fieldId}-err` : undefined;
     const describedBy = errorId ?? helpId;
 
+    // 경계는 edge-strong(3.03:1) — WCAG 1.4.11 이 요구하는 컨트롤 경계 대비.
+    // 장식용 괘선(edge, 1.48:1)을 여기 쓰면 조작 가능한 요소가 안 보인다.
     const fieldBorder = errorText
-      ? "border border-rose focus-visible:border-rose focus-visible:ring-rose/30"
-      : "border border-edge-strong hover:border-mid focus-visible:border-mint";
+      ? "border border-rose"
+      : "border border-edge-strong hover:border-hi";
 
     return (
       <div className="flex flex-col gap-1.5">

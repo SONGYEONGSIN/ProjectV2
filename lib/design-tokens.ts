@@ -5,14 +5,14 @@
  * 본 파일은 동일 값을 TS `as const`로 미러링한다.
  *
  * 변경 시 globals.css와 함께 동기화 필수.
- * 컴포넌트는 가능하면 Tailwind 클래스(`bg-surface`, `text-hi`, `text-mint`, `text-mono-display` 등)를 우선 사용하고,
+ * 컴포넌트는 가능하면 Tailwind 클래스(`bg-surface`, `text-hi`, `text-accent`, `text-mono-display` 등)를 우선 사용하고,
  * 직접 색 참조가 필요한 경우(인라인 스타일·차트 라이브러리·SVG 등)에만 본 토큰을 import한다.
  */
 
 export const colors = {
   /* Surfaces (off-black base + elevated) */
   base: "#0b0c0f",
-  ink: "#0b0c0f", // mint 등 밝은 액센트 위 어두운 텍스트
+  ink: "#0b0c0f", // accent 등 밝은 액센트 위 어두운 텍스트
   surface: "#14161b",
   surface2: "#1b1f27",
   surface3: "#232833",
@@ -26,9 +26,9 @@ export const colors = {
   mid: "#a7aebc",
   dim: "#6b7280",
 
-  /* Accents — brand mint + 시맨틱 */
-  mint: "#35e4a4", // 브랜드 액센트 / 양수 / 강조
-  mintSoft: "#1e5c48",
+  /* Accents — brand accent + 시맨틱 */
+  accent: "#35e4a4", // 브랜드 액센트 / 양수 / 강조
+  accentInk: "#1e5c48",
   rose: "#fb7185", // 음수 / 파괴적 액션
   amber: "#fbbf24", // 경고 / 주의
   sky: "#60a5fa", // 정보 / 보조
@@ -66,7 +66,7 @@ export const shadows = {
   sm: "rgba(0, 0, 0, 0.4) 0px 1px 2px 0px",
   md: "rgba(0, 0, 0, 0.5) 0px 10px 15px -3px, rgba(0, 0, 0, 0.4) 0px 4px 6px -4px",
   lg: "rgba(0, 0, 0, 0.6) 0px 24px 60px -20px",
-  mintGlow: "rgba(53, 228, 164, 0.16) 0px 0px 60px 0px",
+  accentGlow: "rgba(53, 228, 164, 0.16) 0px 0px 60px 0px",
 } as const;
 
 export const borders = {
@@ -77,7 +77,7 @@ export const borders = {
 export const typography = {
   baseFontSize: "14px",
   fontDisplay:
-    'var(--font-montserrat-loaded), "Montserrat", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+    'var(--font-inter-loaded), "Inter", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
   fontBody:
     'var(--font-inter-loaded), "Inter", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
   fontMono:

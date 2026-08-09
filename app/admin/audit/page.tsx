@@ -105,7 +105,7 @@ export default async function AuditPage({
             name="action"
             defaultValue={filterAction ?? ""}
             placeholder="action 필터 (예: login.success)"
-            className="flex-1 min-w-[200px] h-11 rounded-md border border-edge bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-mint focus-visible:ring-2 focus-visible:ring-mint/30"
+            className="flex-1 min-w-[200px] h-11 rounded-md border border-edge bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
           />
           <Button type="submit" variant="primary" size="md">
             필터

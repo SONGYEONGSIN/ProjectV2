@@ -90,7 +90,7 @@ export default function BoardDetailPage({
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-mint border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           <span className="text-body-sm text-mid">불러오는 중…</span>
         </div>
       </div>
@@ -129,7 +129,7 @@ export default function BoardDetailPage({
           {post.is_pinned && (
             <Pin
               size={18}
-              className="text-mint mt-1 flex-shrink-0"
+              className="text-accent mt-1 flex-shrink-0"
               strokeWidth={2}
             />
           )}

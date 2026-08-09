@@ -12,31 +12,29 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useSession, signOut } from "next-auth/react";
-import { Button } from "@/components/ui/Button";
+import { BrandLockup } from "@/components/layout/Brand";
 
 const SESSION_TIMEOUT = 30 * 60; // 30분 (초)
 
-/** 인라인 로고 — ㅌ 자모: 가로획 3 + 세로획 1. currentColor. */
-function LogoMark({ size = 22 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="square"
-      aria-hidden="true"
-    >
-      <path d="M5 4 L19 4" />
-      <path d="M5 12 L19 12" />
-      <path d="M5 20 L19 20" />
-      <path d="M12 4 L12 20" />
-    </svg>
-  );
-}
+const APP_NAV = [
+  { href: "/dashboard", label: "대시보드", Icon: LayoutDashboard, matcher: (p: string) => p === "/dashboard" },
+  { href: "/calculator", label: "계산기", Icon: Calculator, matcher: (p: string) => p === "/calculator" },
+  { href: "/admin", label: "기초자료", Icon: ClipboardList, matcher: (p: string) => p.startsWith("/admin") },
+  { href: "/board", label: "게시판", Icon: MessageSquareText, matcher: (p: string) => p.startsWith("/board") },
+];
 
+/**
+ * 문서의 머리말.
+ *
+ * 조판은 서류 언어로 바꾸되 동작은 전부 보존한다 — 30분 세션 타임아웃과 자동
+ * 로그아웃, 인증 전/후 분기, 앱 내비 4종, 모바일 하단 탭바. 재개편 시안은
+ * 공개 3면만 상정한 서버 컴포넌트였으므로 여기 로직이 시안에는 존재하지 않는다.
+ * "이식"으로 착각해 시안 셸을 그대로 가져오면 앱 내비가 통째로 사라진다.
+ *
+ * 면이 아니라 선이 구획한다: 머리말은 본문과 같은 백지 위에서 2px 문서
+ * 경계선(border-hi)으로 갈린다. sticky 라 본문이 밑으로 지나가므로 반투명·blur
+ * 를 쓰지 않는다 — 면색이 스크롤에 따라 흔들리면 "구분된 영역"이 무너진다.
+ */
 export function Navigation() {
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -78,118 +76,81 @@ export function Navigation() {
 
   const isTimeWarning = remainingTime <= 5 * 60;
 
-  const desktopNavItems: Array<{
-    href: string;
-    label: string;
-    matcher: (p: string) => boolean;
-  }> = [
-    {
-      href: "/dashboard",
-      label: "대시보드",
-      matcher: (p) => p === "/dashboard",
-    },
-    {
-      href: "/calculator",
-      label: "계산기",
-      matcher: (p) => p === "/calculator",
-    },
-    {
-      href: "/admin",
-      label: "기초자료",
-      matcher: (p) => p.startsWith("/admin"),
-    },
-    { href: "/board", label: "게시판", matcher: (p) => p.startsWith("/board") },
-  ];
-
   return (
     <>
-      <nav className="sticky top-0 z-40 h-16 bg-base/80 backdrop-blur-md border-b border-edge">
-        <div className="container mx-auto h-full px-4 md:px-6 max-w-[1200px] flex items-center justify-between">
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-hi hover:text-mint transition-colors shrink-0"
-            aria-label="taxback365 홈"
-          >
-            <LogoMark />
-            <span className="font-display font-semibold text-heading-sm tracking-tight">
-              taxback365
-            </span>
-          </Link>
+      <nav
+        aria-label="주요 메뉴"
+        className="sticky top-0 z-40 bg-base border-b-2 border-hi"
+      >
+        <div className="container mx-auto h-14 md:h-16 px-4 md:px-6 max-w-[1200px] flex items-center justify-between gap-4">
+          <BrandLockup />
 
-          {/* Desktop Nav */}
+          {/* 데스크톱 앱 내비 — 인증 전 공개 페이지에는 두지 않는다 */}
           {!isLanding && !isAuthPage && (
-            <div className="hidden md:flex items-center gap-1">
-              {desktopNavItems.map((item) => {
-                const active = item.matcher(pathname);
+            <div className="hidden md:flex items-center self-stretch">
+              {APP_NAV.map(({ href, label, matcher }) => {
+                const active = matcher(pathname);
                 return (
                   <Link
-                    key={item.href}
-                    href={item.href}
+                    key={href}
+                    href={href}
+                    aria-current={active ? "page" : undefined}
                     className={clsx(
-                      "relative px-3 py-2 rounded-md text-body font-medium transition-colors duration-150",
+                      "relative flex items-center px-4 text-body font-semibold transition-colors",
+                      // active 표식은 accent 가 아니라 2px 검정 괘선이다.
+                      // 서류 조판에서 위치를 가리키는 것은 색이 아니라 선이고,
+                      // accent 는 CTA·상태 표식에 아껴 둔다.
                       active
-                        ? "text-hi after:absolute after:left-3 after:right-3 after:-bottom-[1.05rem] after:h-[2px] after:bg-mint"
-                        : "text-mid hover:text-hi hover:bg-surface",
+                        ? "text-hi after:absolute after:inset-x-2 after:-bottom-[2px] after:h-[3px] after:bg-hi"
+                        : "text-mid hover:text-hi",
                     )}
                   >
-                    {item.label}
+                    {label}
                   </Link>
                 );
               })}
             </div>
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             {session ? (
               <>
-                <div className="hidden md:flex items-center gap-2">
-                  <span className="text-body-sm font-medium text-hi">
+                <div className="hidden md:flex items-baseline gap-3">
+                  <span className="text-body-sm font-semibold text-hi">
                     {session.user?.name || "사용자"}님
                   </span>
                   <span
                     className={clsx(
-                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium",
-                      isTimeWarning
-                        ? "bg-amber/10 text-amber"
-                        : "bg-surface text-mid",
+                      "inline-flex items-center gap-1 font-mono tabular-nums text-caption",
+                      isTimeWarning ? "text-accent-ink" : "text-mid",
                     )}
                   >
-                    <Clock size={11} strokeWidth={2} />
-                    <span className="font-mono tabular-nums">
-                      {formatTime(remainingTime)}
+                    <Clock size={11} strokeWidth={2} aria-hidden="true" />
+                    <span>{formatTime(remainingTime)}</span>
+                    <span className="sr-only">
+                      {isTimeWarning ? "세션 곧 만료" : "세션 남은 시간"}
                     </span>
                   </span>
                 </div>
-                <div className="w-8 h-8 rounded-full border border-edge bg-surface overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={
-                      session.user?.image ||
-                      "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
-                    }
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
+                <button
+                  type="button"
                   onClick={() => signOut({ callbackUrl: "/" })}
+                  className="inline-flex h-9 items-center border border-edge-strong px-3.5 text-body-sm font-semibold text-hi transition-colors hover:bg-surface"
                 >
                   로그아웃
-                </Button>
+                </button>
               </>
             ) : isLanding || isAuthPage ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <Link
                   href="/login"
-                  className="inline-flex items-center justify-center h-9 px-4 rounded-full text-body font-medium text-mid hover:text-hi hover:bg-surface transition-colors"
+                  className="text-body-sm font-semibold text-mid underline-offset-4 transition-colors hover:text-hi hover:underline"
                 >
                   로그인
                 </Link>
                 <Link
                   href="/signup"
-                  className="inline-flex items-center justify-center h-9 px-4 rounded-full text-body font-semibold bg-mint text-ink hover:brightness-110 active:scale-[0.98] transition-all"
+                  className="inline-flex h-9 items-center bg-accent px-4 text-body-sm font-semibold text-ink transition-opacity hover:opacity-90"
                 >
                   회원가입
                 </Link>
@@ -199,55 +160,39 @@ export function Navigation() {
         </div>
       </nav>
 
-      {/* Mobile Bottom Navigation */}
+      {/* 모바일 하단 탭바 — 인증 후 화면에서만. app/layout.tsx 의 pb-24 가 자리를 비워 둔다 */}
       {showMobileNav && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-base border-t border-edge">
-          <div className="flex justify-around items-center h-16 px-2">
-            {[
-              {
-                href: "/dashboard",
-                label: "대시보드",
-                Icon: LayoutDashboard,
-                active: pathname === "/dashboard",
-              },
-              {
-                href: "/calculator",
-                label: "계산기",
-                Icon: Calculator,
-                active: pathname === "/calculator",
-              },
-              {
-                href: "/admin",
-                label: "기초자료",
-                Icon: ClipboardList,
-                active: pathname.startsWith("/admin"),
-              },
-              {
-                href: "/board",
-                label: "게시판",
-                Icon: MessageSquareText,
-                active: pathname.startsWith("/board"),
-              },
-            ].map(({ href, label, Icon, active }) => (
-              <Link
-                key={href}
-                href={href}
-                className={clsx(
-                  "flex flex-col items-center justify-center flex-1 h-full gap-0.5 rounded-md transition-colors",
-                  active ? "text-mint" : "text-dim hover:text-hi",
-                )}
-              >
-                <Icon size={20} strokeWidth={active ? 2.25 : 1.75} />
-                <span
+        <nav
+          aria-label="하단 메뉴"
+          className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-base border-t-2 border-hi"
+        >
+          <div className="flex justify-around items-stretch h-16">
+            {APP_NAV.map(({ href, label, Icon, matcher }) => {
+              const active = matcher(pathname);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={active ? "page" : undefined}
                   className={clsx(
-                    "text-[11px]",
-                    active ? "font-semibold" : "font-medium",
+                    "flex flex-col items-center justify-center flex-1 gap-1 border-t-[3px] transition-colors",
+                    active
+                      ? "border-hi text-hi"
+                      : "border-transparent text-mid hover:text-hi",
                   )}
                 >
-                  {label}
-                </span>
-              </Link>
-            ))}
+                  <Icon size={20} strokeWidth={active ? 2.25 : 1.75} aria-hidden="true" />
+                  <span
+                    className={clsx(
+                      "text-[11px]",
+                      active ? "font-semibold" : "font-normal",
+                    )}
+                  >
+                    {label}
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </nav>
       )}

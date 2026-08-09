@@ -1,0 +1,261 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C1 급여만 있고 공제가 전무한 최소 입력 1`] = `
+{
+  "calculatedTax": 1777500,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 20250000,
+  "earnedIncomeTaxCredit": 740000,
+  "educationDeduction": 0,
+  "finalTax": 1037500,
+  "housingDeduction": 0,
+  "incomeDeduction": 9750000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 0,
+  "personalDeduction": 0,
+  "refund": -1037500,
+  "salary": 30000000,
+  "socialInsuranceDeduction": 0,
+  "taxableIncome": 20250000,
+  "totalIncomeDeduction": 0,
+  "totalTaxCredit": 740000,
+  "withheldTax": 0,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C2 평균 직장인 — 4,800만 / 부양가족 1 / 카드 사용 1`] = `
+{
+  "calculatedTax": 2909700,
+  "cardDeduction": 2040000,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 35850000,
+  "earnedIncomeTaxCredit": 660000,
+  "educationDeduction": 0,
+  "finalTax": 2249700,
+  "housingDeduction": 0,
+  "incomeDeduction": 12150000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 0,
+  "personalDeduction": 1500000,
+  "refund": -1049700,
+  "salary": 48000000,
+  "socialInsuranceDeduction": 4512000,
+  "taxableIncome": 27798000,
+  "totalIncomeDeduction": 8052000,
+  "totalTaxCredit": 660000,
+  "withheldTax": 1200000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C3 총급여 5,500만 경계 — 월세·연금저축 공제율 분기점 1`] = `
+{
+  "calculatedTax": 4114500,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 42500000,
+  "earnedIncomeTaxCredit": 660000,
+  "educationDeduction": 0,
+  "finalTax": 1750500,
+  "housingDeduction": 1224000,
+  "incomeDeduction": 12500000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 480000,
+  "personalDeduction": 1500000,
+  "refund": 49500,
+  "salary": 55000000,
+  "socialInsuranceDeduction": 5170000,
+  "taxableIncome": 35830000,
+  "totalIncomeDeduction": 6670000,
+  "totalTaxCredit": 2364000,
+  "withheldTax": 1800000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C4 5,500만 바로 위 — C3 와 공제율이 갈려야 한다 1`] = `
+{
+  "calculatedTax": 4114500,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 42500001,
+  "earnedIncomeTaxCredit": 660000,
+  "educationDeduction": 0,
+  "finalTax": 1894500,
+  "housingDeduction": 1080000,
+  "incomeDeduction": 12500000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 480000,
+  "personalDeduction": 1500000,
+  "refund": -94500,
+  "salary": 55000001,
+  "socialInsuranceDeduction": 5170000,
+  "taxableIncome": 35830001,
+  "totalIncomeDeduction": 6670000,
+  "totalTaxCredit": 2220000,
+  "withheldTax": 1800000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C5 의료비 문턱(총급여 3%) 초과 + 난임·미숙아 별도 요율 1`] = `
+{
+  "calculatedTax": 4531500,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 47250000,
+  "earnedIncomeTaxCredit": 660000,
+  "educationDeduction": 0,
+  "finalTax": 2250447,
+  "housingDeduction": 0,
+  "incomeDeduction": 12750000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 1621053,
+  "pensionDeduction": 0,
+  "personalDeduction": 3000000,
+  "refund": 149553,
+  "salary": 60000000,
+  "socialInsuranceDeduction": 5640000,
+  "taxableIncome": 38610000,
+  "totalIncomeDeduction": 8640000,
+  "totalTaxCredit": 2281053,
+  "withheldTax": 2400000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C6 주택자금 3종 동시 — 청약·전세원리금·저당차입금 이자 1`] = `
+{
+  "calculatedTax": 4561500,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 56750000,
+  "earnedIncomeTaxCredit": 660000,
+  "educationDeduction": 0,
+  "finalTax": 3901500,
+  "housingDeduction": 8360000,
+  "incomeDeduction": 13250000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 0,
+  "personalDeduction": 3000000,
+  "refund": -301500,
+  "salary": 70000000,
+  "socialInsuranceDeduction": 6580000,
+  "taxableIncome": 38810000,
+  "totalIncomeDeduction": 17940000,
+  "totalTaxCredit": 660000,
+  "withheldTax": 3600000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C7 연금계좌 한도 초과 입력 — 캡이 걸리는지 1`] = `
+{
+  "calculatedTax": 8335200,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 66250000,
+  "earnedIncomeTaxCredit": 500000,
+  "educationDeduction": 0,
+  "finalTax": 6695200,
+  "housingDeduction": 0,
+  "incomeDeduction": 13750000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 1140000,
+  "personalDeduction": 0,
+  "refund": -1695200,
+  "salary": 80000000,
+  "socialInsuranceDeduction": 7520000,
+  "taxableIncome": 58730000,
+  "totalIncomeDeduction": 7520000,
+  "totalTaxCredit": 1640000,
+  "withheldTax": 5000000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C8 기부금 전 유형 동시 1`] = `
+{
+  "calculatedTax": 10029600,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 1067727,
+  "earnedIncome": 75750000,
+  "earnedIncomeTaxCredit": 500000,
+  "educationDeduction": 0,
+  "finalTax": 8461873,
+  "housingDeduction": 0,
+  "incomeDeduction": 14250000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 0,
+  "personalDeduction": 1500000,
+  "refund": -1461873,
+  "salary": 90000000,
+  "socialInsuranceDeduction": 8460000,
+  "taxableIncome": 65790000,
+  "totalIncomeDeduction": 9960000,
+  "totalTaxCredit": 1567727,
+  "withheldTax": 7000000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C9 자녀세액공제 + 출산·입양(셋째) 1`] = `
+{
+  "calculatedTax": 4723500,
+  "cardDeduction": 0,
+  "childTaxCredit": 1650000,
+  "donationDeduction": 0,
+  "earnedIncome": 52000000,
+  "earnedIncomeTaxCredit": 660000,
+  "educationDeduction": 750000,
+  "finalTax": 1663500,
+  "housingDeduction": 0,
+  "incomeDeduction": 13000000,
+  "insuranceDeduction": 0,
+  "medicalDeduction": 0,
+  "pensionDeduction": 0,
+  "personalDeduction": 6000000,
+  "refund": 336500,
+  "salary": 65000000,
+  "socialInsuranceDeduction": 6110000,
+  "taxableIncome": 39890000,
+  "totalIncomeDeduction": 12110000,
+  "totalTaxCredit": 3060000,
+  "withheldTax": 2000000,
+}
+`;
+
+exports[`calculateTax — 특성화(현재 출력 고정) > C10 고소득 1.2억 — 최고 세율구간 + 근로소득세액공제 축소 1`] = `
+{
+  "calculatedTax": 16259500,
+  "cardDeduction": 0,
+  "childTaxCredit": 0,
+  "donationDeduction": 0,
+  "earnedIncome": 104850000,
+  "earnedIncomeTaxCredit": 500000,
+  "educationDeduction": 750000,
+  "finalTax": 14889500,
+  "housingDeduction": 0,
+  "incomeDeduction": 15150000,
+  "insuranceDeduction": 120000,
+  "medicalDeduction": 0,
+  "pensionDeduction": 120000,
+  "personalDeduction": 3000000,
+  "refund": -2889500,
+  "salary": 120000000,
+  "socialInsuranceDeduction": 11280000,
+  "taxableIncome": 90570000,
+  "totalIncomeDeduction": 14280000,
+  "totalTaxCredit": 1370000,
+  "withheldTax": 12000000,
+}
+`;

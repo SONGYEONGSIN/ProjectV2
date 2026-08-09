@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Montserrat } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
@@ -9,13 +9,6 @@ import { WebApplicationJsonLd, FAQPageJsonLd } from "@/components/seo/JsonLd";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter-loaded",
-  display: "swap",
-});
-
-const montserrat = Montserrat({
-  subsets: ["latin"],
-  weight: ["500", "600"],
-  variable: "--font-montserrat-loaded",
   display: "swap",
 });
 
@@ -89,7 +82,7 @@ export default function RootLayout({
   return (
     <html lang="ko" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${montserrat.variable} antialiased`}
+        className={`${inter.variable} antialiased`}
         suppressHydrationWarning
       >
         <AuthProvider>

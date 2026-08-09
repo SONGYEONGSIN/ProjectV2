@@ -420,7 +420,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-2">
               <span
                 className={clsx(
-                  "w-1.5 h-1.5 rounded-full",
+                  "w-1.5 h-1.5",
                   currentAmount >= 0 ? "bg-accent" : "bg-rose",
                 )}
               />
@@ -459,10 +459,10 @@ export default function DashboardPage() {
                   {currentAmount >= 0 ? `${goalProgress}%` : "—"}
                 </span>
               </div>
-              <div className="w-full bg-surface-2 h-1.5 rounded-full overflow-hidden">
+              <div className="w-full bg-surface-2 h-1.5 overflow-hidden">
                 <div
                   className={clsx(
-                    "h-full transition-all duration-500 rounded-full",
+                    "h-full transition-all duration-500",
                     currentAmount >= 0 ? "bg-accent" : "bg-rose",
                   )}
                   style={{
@@ -508,12 +508,12 @@ export default function DashboardPage() {
                   onClick={() =>
                     setGoalAmount((prev) => Math.max(100000, prev - 100000))
                   }
-                  className="w-9 h-9 rounded-md border border-edge bg-surface hover:bg-surface-2 flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="w-9 h-9 border border-edge-strong bg-surface hover:bg-surface-2 flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   aria-label="목표 금액 감소"
                 >
                   <ChevronDown size={16} strokeWidth={1.75} />
                 </button>
-                <div className="flex-1 h-9 rounded-md border border-edge bg-surface flex items-center justify-center text-mono-display text-[18px] font-semibold tabular-nums text-hi">
+                <div className="flex-1 h-9 border border-edge-strong bg-surface flex items-center justify-center text-mono-display text-[18px] font-semibold tabular-nums text-hi">
                   {formatKRW(goalAmount)}
                   <span className="text-caption text-mid ml-1">원</span>
                 </div>
@@ -526,7 +526,7 @@ export default function DashboardPage() {
                   disabled={
                     totalPrepaidTax > 0 && goalAmount >= totalPrepaidTax
                   }
-                  className="w-9 h-9 rounded-md border border-edge bg-surface hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="w-9 h-9 border border-edge-strong bg-surface hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   aria-label="목표 금액 증가"
                 >
                   <ChevronUp size={16} strokeWidth={1.75} />
@@ -542,7 +542,7 @@ export default function DashboardPage() {
                       onClick={() => !isDisabled && setGoalAmount(amount)}
                       disabled={isDisabled}
                       className={clsx(
-                        "h-8 rounded-md border text-caption font-mono tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        "h-8 border text-caption font-mono tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                         isDisabled
                           ? "border-edge bg-surface-2 text-dim cursor-not-allowed"
                           : goalAmount === amount
@@ -649,7 +649,7 @@ export default function DashboardPage() {
                   >
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2.5">
-                        <span className="w-7 h-7 rounded-md bg-surface-2 text-mid flex items-center justify-center flex-shrink-0">
+                        <span className="w-7 h-7 bg-surface-2 text-mid flex items-center justify-center flex-shrink-0">
                           <Icon size={14} strokeWidth={1.75} />
                         </span>
                         <span className="text-body-sm font-medium text-hi whitespace-pre-line">
@@ -726,10 +726,10 @@ export default function DashboardPage() {
                     </td>
                     <td className="py-3 px-3">
                       <div className="flex items-center justify-center gap-2">
-                        <div className="w-12 sm:w-16 h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                        <div className="w-12 sm:w-16 h-1.5 bg-surface-2 overflow-hidden">
                           <div
                             className={clsx(
-                              "h-full rounded-full",
+                              "h-full",
                               getUtilizationFill(utilizationRate),
                             )}
                             style={{
@@ -757,7 +757,7 @@ export default function DashboardPage() {
 
         {/* Summary */}
         <div className="mt-6 grid md:grid-cols-2 gap-4">
-          <div className="rounded-md border border-edge bg-surface-2 p-4">
+          <div className=" border border-edge-strong bg-surface-2 p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-caption font-semibold text-mid uppercase tracking-[0.06em]">
                 소득공제
@@ -778,7 +778,7 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
-            <div className="mt-3 w-full bg-surface h-1 rounded-full overflow-hidden">
+            <div className="mt-3 w-full bg-surface h-1 overflow-hidden">
               <div
                 className="h-full bg-sky"
                 style={{
@@ -788,7 +788,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="rounded-md border border-edge bg-surface-2 p-4">
+          <div className=" border border-edge-strong bg-surface-2 p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-caption font-semibold text-mid uppercase tracking-[0.06em]">
                 세액공제
@@ -809,7 +809,7 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
-            <div className="mt-3 w-full bg-surface h-1 rounded-full overflow-hidden">
+            <div className="mt-3 w-full bg-surface h-1 overflow-hidden">
               <div
                 className="h-full bg-accent"
                 style={{
@@ -871,7 +871,7 @@ export default function DashboardPage() {
               aiRecommendations.map((rec) => (
                 <div
                   key={rec.id}
-                  className="rounded-md border border-edge bg-surface p-4 hover:border-edge-strong hover:shadow-subtle transition-all"
+                  className=" border border-edge-strong bg-surface p-4 hover:border-edge-strong hover:shadow-subtle transition-all"
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <Badge type={rec.priority} />
@@ -945,7 +945,7 @@ export default function DashboardPage() {
                       href={article.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block rounded-md border border-edge bg-surface p-3 hover:bg-surface-2 hover:border-edge-strong transition-colors group"
+                      className="block border border-edge-strong bg-surface p-3 hover:bg-surface-2 hover:border-edge-strong transition-colors group"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
@@ -986,7 +986,7 @@ export default function DashboardPage() {
                         href={article.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="block rounded-md border border-edge bg-surface-2 p-3 hover:bg-surface hover:border-edge-strong transition-colors group opacity-90"
+                        className="block border border-edge-strong bg-surface-2 p-3 hover:bg-surface hover:border-edge-strong transition-colors group opacity-90"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
@@ -1041,7 +1041,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <Link href="/calculator" className="flex-shrink-0">
-            <span className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-md bg-surface text-hi text-body-sm font-semibold hover:bg-surface/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
+            <span className="inline-flex items-center justify-center gap-2 h-11 px-5 bg-surface text-hi text-body-sm font-semibold hover:bg-surface/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
               절세 시뮬레이션
               <ArrowRight size={14} strokeWidth={1.75} />
             </span>
@@ -1056,7 +1056,7 @@ export default function DashboardPage() {
             className="absolute inset-0 bg-scrim"
             onClick={() => !aiAdviceLoading && setShowAiModal(false)}
           />
-          <div className="relative w-full max-w-2xl max-h-[80vh] bg-surface rounded-lg shadow-md overflow-hidden flex flex-col">
+          <div className="relative w-full max-w-2xl max-h-[80vh] bg-surface shadow-md overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-edge">
               <h3 className="text-h3 text-hi flex items-center gap-2">
                 <Sparkles size={18} strokeWidth={1.75} className="text-hi" />
@@ -1065,7 +1065,7 @@ export default function DashboardPage() {
               {!aiAdviceLoading && (
                 <button
                   onClick={() => setShowAiModal(false)}
-                  className="w-8 h-8 rounded-md hover:bg-surface-2 flex items-center justify-center text-mid hover:text-hi transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="w-8 h-8 hover:bg-surface-2 flex items-center justify-center text-mid hover:text-hi transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   aria-label="모달 닫기"
                 >
                   <X size={16} strokeWidth={1.75} />
@@ -1089,7 +1089,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
               ) : aiAdviceError ? (
-                <div className="rounded-md border border-amber/30 bg-amber/8 p-4">
+                <div className=" border border-amber/30 bg-amber/8 p-4">
                   <p className="text-body-sm text-amber flex items-center gap-2">
                     <AlertCircle size={16} strokeWidth={1.75} />
                     {aiAdviceError}
@@ -1151,7 +1151,7 @@ export default function DashboardPage() {
                         <li className="text-body">{children}</li>
                       ),
                       code: ({ children }) => (
-                        <code className="px-1 py-0.5 bg-surface-2 rounded font-mono text-[13px]">
+                        <code className="px-1 py-0.5 bg-surface-2 font-mono text-[13px]">
                           {children}
                         </code>
                       ),

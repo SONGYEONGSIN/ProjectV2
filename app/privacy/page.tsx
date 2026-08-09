@@ -1,29 +1,39 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { Card } from "@/components/ui/Card";
+import { DocHead } from "@/components/common/Doc";
 
 export default function PrivacyPage() {
   return (
-    <div className="max-w-[680px] mx-auto animate-fade-in">
-      <div className="mb-8">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-body-sm text-mid hover:text-hi transition-colors mb-6"
-        >
-          <ArrowLeft size={14} strokeWidth={1.75} />
-          홈으로 돌아가기
-        </Link>
-        <h1 className="text-h1 text-hi">개인정보처리방침</h1>
-        <p className="text-caption text-mid mt-2">
-          최종 수정일: 2026년 1월 1일
-        </p>
+    <div className="mx-auto w-full max-w-[680px] py-8 md:py-12">
+      <DocHead title="개인정보처리방침" meta="문서" />
+
+      <div className="mt-10 grid gap-x-8 gap-y-3 md:grid-cols-[5.5rem_1fr]">
+        <p className="font-mono tabular-nums text-[11px] text-hi">문서</p>
+        <div className="min-w-0">
+          <h1 className="font-display text-heading font-extrabold tracking-[-0.03em] text-hi">
+            개인정보처리방침
+          </h1>
+          <Link
+            href="/"
+            className="mt-3 inline-flex items-center gap-1.5 text-body-sm text-mid underline-offset-4 transition-colors hover:text-hi hover:underline"
+          >
+            <ArrowLeft size={14} strokeWidth={1.75} aria-hidden="true" />
+            홈으로 돌아가기
+          
+          <p className="mt-3 text-caption text-mid">
+            최종 수정일: 2026년 1월 1일
+          </p></Link>
+        </div>
       </div>
 
-      <Card padding="lg" className="space-y-10">
-        <section>
-          <h2 className="text-h3 text-hi mb-3">
-            제1조 (개인정보의 수집 및 이용 목적)
-          </h2>
+      <div className="mt-10 border-t-2 border-hi">
+        <section className="grid gap-x-8 gap-y-2 border-b border-edge py-7 md:grid-cols-[5.5rem_1fr]">
+          <p aria-hidden="true" className="font-mono tabular-nums text-[11px] text-hi">제1조</p>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-semibold text-hi">
+              <span className="sr-only">제1조 </span>
+              개인정보의 수집 및 이용 목적
+            </h2>
           <p className="text-body text-mid leading-[1.7] mb-3">
             taxback365는 다음 목적을 위해 개인정보를 수집·이용합니다:
           </p>
@@ -34,12 +44,16 @@ export default function PrivacyPage() {
             <li>서비스 개선 및 신규 기능 개발</li>
             <li>고객 문의 응대 및 공지사항 전달</li>
           </ul>
+        </div>
         </section>
 
-        <section>
-          <h2 className="text-h3 text-hi mb-3">
-            제2조 (수집하는 개인정보 항목)
-          </h2>
+        <section className="grid gap-x-8 gap-y-2 border-b border-edge py-7 md:grid-cols-[5.5rem_1fr]">
+          <p aria-hidden="true" className="font-mono tabular-nums text-[11px] text-hi">제2조</p>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-semibold text-hi">
+              <span className="sr-only">제2조 </span>
+              수집하는 개인정보 항목
+            </h2>
           <div className="overflow-x-auto rounded-md border border-edge">
             <table className="w-full text-body-sm">
               <thead>
@@ -78,12 +92,16 @@ export default function PrivacyPage() {
               </tbody>
             </table>
           </div>
+        </div>
         </section>
 
-        <section>
-          <h2 className="text-h3 text-hi mb-3">
-            제3조 (개인정보의 보유 및 이용 기간)
-          </h2>
+        <section className="grid gap-x-8 gap-y-2 border-b border-edge py-7 md:grid-cols-[5.5rem_1fr]">
+          <p aria-hidden="true" className="font-mono tabular-nums text-[11px] text-hi">제3조</p>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-semibold text-hi">
+              <span className="sr-only">제3조 </span>
+              개인정보의 보유 및 이용 기간
+            </h2>
           <div className="space-y-3 text-body text-mid leading-[1.7]">
             <p>
               <strong className="text-hi">1. 회원 정보:</strong> 회원 탈퇴
@@ -98,12 +116,16 @@ export default function PrivacyPage() {
               보관 후 파기
             </p>
           </div>
+        </div>
         </section>
 
-        <section>
-          <h2 className="text-h3 text-hi mb-3">
-            제4조 (개인정보의 제3자 제공)
-          </h2>
+        <section className="grid gap-x-8 gap-y-2 border-b border-edge py-7 md:grid-cols-[5.5rem_1fr]">
+          <p aria-hidden="true" className="font-mono tabular-nums text-[11px] text-hi">제4조</p>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-semibold text-hi">
+              <span className="sr-only">제4조 </span>
+              개인정보의 제3자 제공
+            </h2>
           <div className="rounded-md bg-accent/8 border border-accent/30 p-4 space-y-2">
             <p className="text-body text-hi font-medium">
               taxback365는 원칙적으로 이용자의 개인정보를 제3자에게 제공하지
@@ -117,12 +139,16 @@ export default function PrivacyPage() {
               <li>법령에 의해 요구되는 경우</li>
             </ul>
           </div>
+        </div>
         </section>
 
-        <section>
-          <h2 className="text-h3 text-hi mb-3">
-            제5조 (개인정보의 안전성 확보 조치)
-          </h2>
+        <section className="grid gap-x-8 gap-y-2 border-b border-edge py-7 md:grid-cols-[5.5rem_1fr]">
+          <p aria-hidden="true" className="font-mono tabular-nums text-[11px] text-hi">제5조</p>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-semibold text-hi">
+              <span className="sr-only">제5조 </span>
+              개인정보의 안전성 확보 조치
+            </h2>
           <ul className="list-disc list-inside space-y-1.5 text-body text-mid ml-2">
             <li>개인정보 암호화 저장 (AES-256)</li>
             <li>SSL/TLS를 통한 데이터 전송 암호화</li>
@@ -130,10 +156,16 @@ export default function PrivacyPage() {
             <li>개인정보 접근 권한 최소화 및 접근 기록 관리</li>
             <li>해킹 등에 대비한 방화벽 운영</li>
           </ul>
+        </div>
         </section>
 
-        <section>
-          <h2 className="text-h3 text-hi mb-3">제6조 (이용자의 권리)</h2>
+        <section className="grid gap-x-8 gap-y-2 border-b border-edge py-7 md:grid-cols-[5.5rem_1fr]">
+          <p aria-hidden="true" className="font-mono tabular-nums text-[11px] text-hi">제6조</p>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-semibold text-hi">
+              <span className="sr-only">제6조 </span>
+              이용자의 권리
+            </h2>
           <p className="text-body text-mid leading-[1.7] mb-3">
             이용자는 언제든지 다음의 권리를 행사할 수 있습니다:
           </p>
@@ -147,10 +179,16 @@ export default function PrivacyPage() {
             위 권리 행사는 서비스 내 &quot;설정 &gt; 개인정보 관리&quot; 메뉴
             또는 고객센터를 통해 가능합니다.
           </p>
+        </div>
         </section>
 
-        <section>
-          <h2 className="text-h3 text-hi mb-3">제7조 (개인정보 보호책임자)</h2>
+        <section className="grid gap-x-8 gap-y-2 border-b border-edge py-7 md:grid-cols-[5.5rem_1fr]">
+          <p aria-hidden="true" className="font-mono tabular-nums text-[11px] text-hi">제7조</p>
+          <div className="min-w-0">
+            <h2 className="text-h3 font-semibold text-hi">
+              <span className="sr-only">제7조 </span>
+              개인정보 보호책임자
+            </h2>
           <div className="rounded-md bg-surface-2 border border-edge p-4">
             <p className="font-medium text-hi mb-2">개인정보 보호책임자</p>
             <ul className="text-body-sm text-mid space-y-1">
@@ -158,6 +196,7 @@ export default function PrivacyPage() {
               <li className="font-mono">이메일: ysong2526@gmail.com</li>
             </ul>
           </div>
+        </div>
         </section>
 
         <div className="border-t border-edge pt-6 mt-2">
@@ -167,7 +206,7 @@ export default function PrivacyPage() {
             으로 연락 주시기 바랍니다.
           </p>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

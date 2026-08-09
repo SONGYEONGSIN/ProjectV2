@@ -81,7 +81,7 @@ export default function BoardWritePage() {
   };
 
   const fieldClass =
-    "w-full h-11 rounded-md border border-edge bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 transition-colors";
+    "w-full h-11 border border-edge-strong bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 transition-colors";
 
   return (
     <div className="space-y-6 animate-fade-in max-w-[760px] mx-auto">
@@ -96,7 +96,7 @@ export default function BoardWritePage() {
         {/* Author (read-only) */}
         <div className="flex flex-col gap-1.5">
           <label className="text-body-sm font-medium text-hi">작성자</label>
-          <div className="w-full h-11 rounded-md border border-edge bg-surface-2 px-3.5 flex items-center text-body text-mid">
+          <div className="w-full h-11 border border-edge-strong bg-surface-2 px-3.5 flex items-center text-body text-mid">
             {session.user?.name || "익명"}
           </div>
         </div>
@@ -110,7 +110,7 @@ export default function BoardWritePage() {
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="h-11 rounded-md border border-edge bg-surface px-3 text-body-sm text-hi focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 sm:w-32"
+              className="h-11 border border-edge-strong bg-surface px-3 text-body-sm text-hi focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 sm:w-32"
             >
               <option value="일반">일반</option>
               <option value="질문">질문</option>
@@ -147,7 +147,7 @@ export default function BoardWritePage() {
               aria-checked={isPublic}
               onClick={() => setIsPublic(true)}
               className={clsx(
-                "h-11 inline-flex items-center justify-center gap-2 rounded-md border text-body-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                "h-11 inline-flex items-center justify-center gap-2 border text-body-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 isPublic
                   ? "border-accent bg-accent/10 text-accent"
                   : "border-edge bg-surface text-mid hover:bg-surface-2",
@@ -162,7 +162,7 @@ export default function BoardWritePage() {
               aria-checked={!isPublic}
               onClick={() => setIsPublic(false)}
               className={clsx(
-                "h-11 inline-flex items-center justify-center gap-2 rounded-md border text-body-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                "h-11 inline-flex items-center justify-center gap-2 border text-body-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 !isPublic
                   ? "border-accent bg-accent/10 text-accent"
                   : "border-edge bg-surface text-mid hover:bg-surface-2",
@@ -191,7 +191,7 @@ export default function BoardWritePage() {
             placeholder="내용을 입력하세요…"
             rows={12}
             maxLength={5000}
-            className="w-full rounded-md border border-edge bg-surface p-3.5 text-body text-hi placeholder:text-dim leading-[1.7] hover:border-edge-strong focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 transition-colors resize-y"
+            className="w-full border border-edge-strong bg-surface p-3.5 text-body text-hi placeholder:text-dim leading-[1.7] hover:border-edge-strong focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 transition-colors resize-y"
           />
           <div className="text-right text-caption text-mid font-mono tabular-nums">
             {content.length.toLocaleString()} / 5,000
@@ -199,7 +199,7 @@ export default function BoardWritePage() {
         </div>
 
         {error && (
-          <div className="rounded-md border border-rose/30 bg-rose/8 p-3 flex items-start gap-2 text-body-sm text-rose">
+          <div className=" border border-rose/30 bg-rose/8 p-3 flex items-start gap-2 text-body-sm text-rose">
             <AlertTriangle
               size={16}
               strokeWidth={1.75}

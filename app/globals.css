@@ -406,3 +406,49 @@
     animation: marquee 20s linear infinite;
   }
 }
+
+@layer components {
+  /* 서류 조판 슬라이더 — 검은 괘선 위 붉은 사각 지표.
+   * 의사요소도 originating element 로부터 커스텀 프로퍼티를 상속하므로
+   * var() 가 그대로 동작한다. 라운드를 없애 문서 언어와 맞춘다. */
+  .range-doc {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    height: 20px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .range-doc::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--color-hi);
+  }
+  .range-doc::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -5px;
+    border-radius: 0;
+    background: var(--color-accent);
+  }
+  .range-doc::-moz-range-track {
+    height: 2px;
+    background: var(--color-hi);
+  }
+  .range-doc::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 0;
+    border-radius: 0;
+    background: var(--color-accent);
+  }
+  /* 전역 :focus-visible outline 은 유지한다 — thumb 링은 보조 표식이다 */
+  .range-doc:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-accent) 32%, transparent);
+  }
+  .range-doc:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-accent) 32%, transparent);
+  }
+}

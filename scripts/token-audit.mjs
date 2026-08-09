@@ -27,11 +27,7 @@ const ROOTS = ["app", "components", "lib"];
 const EXTS = new Set([".tsx", ".ts", ".css"]);
 const SKIP_DIRS = new Set(["node_modules", ".next", "__snapshots__"]);
 
-/**
- * 시안 폴더는 자체 스코프 토큰(--cx-*)을 쓰는 별도 세계다. 이식이 끝나면
- * 통째로 삭제되므로 잔재 검사 대상이 아니다.
- */
-const SKIP_PATHS = [/^app\/commissioned\//];
+const SKIP_PATHS = [];
 
 /** stage: 이 규칙이 켜지는 단계. 그 단계를 끝낸 시점부터 위반이면 실패. */
 const RULES = [

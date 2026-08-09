@@ -39,10 +39,6 @@ const ROUTES = [
   { path: "/admin", expect: [200, 302, 307] },
   { path: "/admin/audit", expect: [200, 302, 307] },
   { path: "/opengraph-image", expect: 200 },
-  // 재개편 시안 — 이식 완료 후 이 3건은 목록에서 뺀다.
-  { path: "/commissioned/redesign-r1", expect: 200 },
-  { path: "/commissioned/redesign-r1/login", expect: 200 },
-  { path: "/commissioned/redesign-r1/signup", expect: 200 },
   // not-found 가 살아 있는지 (404 자체가 기대값)
   { path: "/__does_not_exist__", expect: 404, allowNotFoundText: true },
 ];

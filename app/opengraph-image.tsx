@@ -55,32 +55,13 @@ export default async function Image() {
             gap: 40,
           }}
         >
-          {/* ㅌ symbol (160×160 inline svg via JSX) */}
+          {/* 브랜드 마크 — components/layout/Brand.tsx · public/logo*.svg 와
+              형상이 일치해야 한다. satori 런타임은 CSS 변수를 읽지 못하므로
+              globals.css 의 --color-hi / --color-accent 값을 하드코딩한다. */}
           <svg width="160" height="160" viewBox="0 0 32 32" fill="none">
-            <path
-              d="M7 6 L25 6"
-              stroke="#0a0a0a"
-              strokeWidth={2.5}
-              strokeLinecap="square"
-            />
-            <path
-              d="M7 16 L25 16"
-              stroke="#0a0a0a"
-              strokeWidth={2.5}
-              strokeLinecap="square"
-            />
-            <path
-              d="M7 26 L25 26"
-              stroke="#0a0a0a"
-              strokeWidth={2.5}
-              strokeLinecap="square"
-            />
-            <path
-              d="M16 6 L16 26"
-              stroke="#0a0a0a"
-              strokeWidth={2.5}
-              strokeLinecap="square"
-            />
+            <rect x="3" y="7" width="26" height="4" fill="#0a0a0a" />
+            <rect x="3" y="14" width="18" height="4" fill="#0a0a0a" />
+            <rect x="3" y="21" width="10" height="4" fill="#d92d33" />
           </svg>
 
           <div

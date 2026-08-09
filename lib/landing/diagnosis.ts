@@ -1,5 +1,5 @@
 /**
- * app/commissioned/redesign-r1/data.ts
+ * 재개편 시안에서 이식(시안 폴더는 제거됨)
  *
  * 시안 전용 결정론 계산 모델 + 카피 데이터.
  * - 난수(Math.random) · 현재시각(Date.now / new Date) 사용 없음. 연도는 상수.

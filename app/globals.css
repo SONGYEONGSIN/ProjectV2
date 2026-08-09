@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Tailwind v4 는 프로젝트 전체를 스캔해 클래스를 찾는다. 문서 파일에 적힌
+ * "클래스 예시"까지 실제 유틸리티로 생성되므로, DESIGN.md 가 참조하는 옛
+ * 토큰(--color-accent-mint 등)이 선언조차 없는 채로 무효 CSS 를 만들어 왔다.
+ * 문서는 스캔 대상이 아니다. */
+@source not "../DESIGN.md";
+@source not "../.claude";
+
 @custom-variant dark (&:is(.dark *));
 
 /* ─────────────────────────────────────────────────────────────────

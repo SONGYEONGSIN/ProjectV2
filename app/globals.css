@@ -36,10 +36,10 @@
 
   /* ───────────────────────────────────────────────────────────────
    * Premium Dark Fintech (v3) — 새 비주얼 아이덴티티
-   * off-black base + elevated surfaces + electric mint accent + mono 숫자.
+   * off-black base + elevated surfaces + electric accent accent + mono 숫자.
    * ─────────────────────────────────────────────────────────────── */
   --color-base: #0b0c0f;
-  --color-ink: #0b0c0f; /* mint 버튼 위 어두운 텍스트 (text-base 폰트크기 충돌 회피) */
+  --color-ink: #0b0c0f; /* accent 버튼 위 어두운 텍스트 (text-base 폰트크기 충돌 회피) */
   --color-surface: #14161b;
   --color-surface-2: #1b1f27;
   --color-surface-3: #232833;
@@ -48,8 +48,8 @@
   --color-hi: #f4f6f9;
   --color-mid: #a7aebc;
   --color-dim: #6b7280;
-  --color-mint: #35e4a4;
-  --color-mint-soft: #1e5c48;
+  --color-accent: #35e4a4;
+  --color-accent-ink: #1e5c48;
   --color-rose: #fb7185;
   --color-amber: #fbbf24;
   --color-sky: #60a5fa;
@@ -180,8 +180,8 @@
   --color-hi: var(--color-hi);
   --color-mid: var(--color-mid);
   --color-dim: var(--color-dim);
-  --color-mint: var(--color-mint);
-  --color-mint-soft: var(--color-mint-soft);
+  --color-accent: var(--color-accent);
+  --color-accent-ink: var(--color-accent-ink);
   --color-rose: var(--color-rose);
   --color-amber: var(--color-amber);
   --color-sky: var(--color-sky);
@@ -277,12 +277,12 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-mint);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }
 
   ::selection {
-    background-color: var(--color-mint);
+    background-color: var(--color-accent);
     color: var(--color-base);
   }
 }

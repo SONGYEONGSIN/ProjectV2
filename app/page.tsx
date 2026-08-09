@@ -19,7 +19,7 @@ import {
 
 /* ──────────────────────────────────────────────────────────────────────
  * Premium Dark Fintech (v3) 랜딩
- * off-black base + electric mint accent + mono 숫자 + asymmetric hero.
+ * off-black base + electric accent accent + mono 숫자 + asymmetric hero.
  * 행동/로직 0 변경 — 시각 정체성만 교체.
  * ──────────────────────────────────────────────────────────────────── */
 
@@ -69,7 +69,7 @@ export default function LandingPage() {
   return (
     <div className="-mt-8">
       {/* ─────────────────────────────────────────────────────────
-       * Hero — asymmetric split + ambient mint glow
+       * Hero — asymmetric split + ambient accent glow
        * ──────────────────────────────────────────────────────── */}
       <section className="relative w-full max-w-[1200px] mx-auto px-4 pt-20 md:pt-28 pb-16">
         <div
@@ -83,14 +83,14 @@ export default function LandingPage() {
         <div className="relative grid lg:grid-cols-[1.05fr_0.95fr] gap-12 lg:gap-16 items-center">
           {/* left — copy */}
           <div className="flex flex-col items-start gap-6">
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-edge bg-surface text-caption font-medium text-mint">
-              <span className="w-1.5 h-1.5 rounded-full bg-mint" />
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-edge bg-surface text-caption font-medium text-accent">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
               2026 세법 개정안 반영
             </span>
             <h1 className="text-hero text-hi max-w-xl">
               올해의 환급,
               <br />
-              <span className="text-mint">분명하게</span> 정리합니다.
+              <span className="text-accent">분명하게</span> 정리합니다.
             </h1>
             <p className="text-subheading text-mid max-w-lg text-pretty">
               taxback365는 한국 직장인의 연말정산을 데이터로 정리합니다. 놓치기
@@ -99,7 +99,7 @@ export default function LandingPage() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-1 w-full sm:w-auto">
               <Link
                 href={primaryHref}
-                className="group inline-flex items-center justify-center gap-2 h-12 px-6 rounded-xl bg-mint text-ink font-semibold hover:brightness-110 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/40 focus-visible:ring-offset-2 focus-visible:ring-offset-base"
+                className="group inline-flex items-center justify-center gap-2 h-12 px-6 rounded-xl bg-accent text-ink font-semibold hover:brightness-110 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-base"
               >
                 {primaryLabel}
                 <ArrowRight
@@ -127,13 +127,13 @@ export default function LandingPage() {
                 <p className="text-caption font-medium uppercase tracking-[0.08em] text-dim">
                   실시간 환급 예상
                 </p>
-                <span className="inline-flex items-center gap-1 text-caption text-mint">
+                <span className="inline-flex items-center gap-1 text-caption text-accent">
                   <TrendingUp size={12} strokeWidth={2.25} />
                   <span className="font-mono tabular-nums">+12.4%</span>
                 </span>
               </div>
               <div className="mt-4 flex items-baseline gap-1.5">
-                <span className="text-mono-display text-[52px] leading-none font-semibold text-mint tabular-nums">
+                <span className="text-mono-display text-[52px] leading-none font-semibold text-accent tabular-nums">
                   +387,250
                 </span>
                 <span className="text-subheading text-mid font-mono">원</span>
@@ -166,7 +166,7 @@ export default function LandingPage() {
       <section className="w-full max-w-[1200px] mx-auto px-4 py-14">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
           <h2 className="text-h2 text-hi max-w-md">
-            놓치기 쉬운 공제, <span className="text-mint">8가지</span>.
+            놓치기 쉬운 공제, <span className="text-accent">8가지</span>.
           </h2>
           <p className="text-body-sm text-mid max-w-sm md:text-right">
             각 항목을 누르면 계산기로 이동합니다. 지출과 소득에 맞춰 환급 가능
@@ -178,9 +178,9 @@ export default function LandingPage() {
             <Link
               key={label}
               href="/calculator"
-              className="group inline-flex items-center gap-2.5 pl-3 pr-4 h-11 rounded-full border border-edge bg-surface text-mid hover:text-mint hover:border-mint/40 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/30"
+              className="group inline-flex items-center gap-2.5 pl-3 pr-4 h-11 rounded-full border border-edge bg-surface text-mid hover:text-accent hover:border-accent/40 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
             >
-              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-surface-2 group-hover:bg-mint/10 transition-colors">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-surface-2 group-hover:bg-accent/10 transition-colors">
                 <Icon size={14} strokeWidth={1.75} />
               </span>
               <span className="text-body-sm font-medium">{label}</span>
@@ -210,7 +210,7 @@ export default function LandingPage() {
                   "radial-gradient(circle, rgba(53,228,164,0.16), transparent 70%)",
               }}
             />
-            <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-mint/10 text-mint">
+            <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-accent/10 text-accent">
               <Sparkles size={22} strokeWidth={1.75} />
             </div>
             <div className="relative">
@@ -223,7 +223,7 @@ export default function LandingPage() {
           </div>
           {/* two stacked */}
           <div className="rounded-2xl border border-edge bg-surface p-7 flex flex-col gap-3">
-            <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-surface-2 text-mint">
+            <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-surface-2 text-accent">
               <TrendingUp size={20} strokeWidth={1.75} />
             </div>
             <h3 className="text-h3 text-hi">정확한 환급 시뮬레이션</h3>
@@ -233,7 +233,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="rounded-2xl border border-edge bg-surface p-7 flex flex-col gap-3">
-            <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-surface-2 text-mint">
+            <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-surface-2 text-accent">
               <ShieldCheck size={20} strokeWidth={1.75} />
             </div>
             <h3 className="text-h3 text-hi">한 번의 정리, 한 해의 답</h3>
@@ -283,7 +283,7 @@ export default function LandingPage() {
                 &ldquo;{review.content}&rdquo;
               </blockquote>
               <figcaption className="flex items-center gap-3 pt-4 border-t border-edge">
-                <span className="flex items-center justify-center w-9 h-9 rounded-full bg-mint/10 text-mint text-body-sm font-semibold">
+                <span className="flex items-center justify-center w-9 h-9 rounded-full bg-accent/10 text-accent text-body-sm font-semibold">
                   {review.name.slice(0, 1)}
                 </span>
                 <span className="flex flex-col">
@@ -299,7 +299,7 @@ export default function LandingPage() {
       </section>
 
       {/* ─────────────────────────────────────────────────────────
-       * Final CTA — mint-glow dark card
+       * Final CTA — accent-glow dark card
        * ──────────────────────────────────────────────────────── */}
       <section className="w-full max-w-[1200px] mx-auto px-4 py-16">
         <div className="relative overflow-hidden rounded-2xl border border-edge bg-surface px-6 py-16 md:py-20 flex flex-col items-center text-center gap-6">
@@ -321,7 +321,7 @@ export default function LandingPage() {
           </p>
           <Link
             href={primaryHref}
-            className="relative group inline-flex items-center justify-center gap-2 h-12 px-8 rounded-xl bg-mint text-ink font-semibold hover:brightness-110 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            className="relative group inline-flex items-center justify-center gap-2 h-12 px-8 rounded-xl bg-accent text-ink font-semibold hover:brightness-110 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
             {primaryLabel}
             <ArrowRight

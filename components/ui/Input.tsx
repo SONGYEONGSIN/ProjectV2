@@ -11,7 +11,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 const baseField =
-  "w-full h-10 px-3 rounded-md bg-surface text-hi text-body placeholder:text-dim transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/30";
+  "w-full h-10 px-3 rounded-md bg-surface text-hi text-body placeholder:text-dim transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30";
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   function Input(
@@ -36,7 +36,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
 
     const fieldBorder = errorText
       ? "border border-rose focus-visible:border-rose focus-visible:ring-rose/30"
-      : "border border-edge-strong hover:border-mid focus-visible:border-mint";
+      : "border border-edge-strong hover:border-mid focus-visible:border-accent";
 
     return (
       <div className="flex flex-col gap-1.5">

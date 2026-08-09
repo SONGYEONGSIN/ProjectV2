@@ -4,7 +4,7 @@ import Link from "next/link";
 export default function NotFound() {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center text-center gap-6 px-4 py-16">
-      <p className="text-mono-display text-[96px] leading-none font-semibold text-mint tabular-nums">
+      <p className="text-mono-display text-[96px] leading-none font-semibold text-accent tabular-nums">
         404
       </p>
       <div className="flex flex-col gap-2">
@@ -17,7 +17,7 @@ export default function NotFound() {
       <div className="flex flex-col sm:flex-row items-center gap-3 mt-2">
         <Link
           href="/"
-          className="inline-flex items-center justify-center h-11 px-6 rounded-xl bg-mint text-ink text-body font-semibold hover:brightness-110 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/40 focus-visible:ring-offset-2 focus-visible:ring-offset-base w-full sm:w-auto"
+          className="inline-flex items-center justify-center h-11 px-6 rounded-xl bg-accent text-ink text-body font-semibold hover:brightness-110 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-base w-full sm:w-auto"
         >
           홈으로
         </Link>

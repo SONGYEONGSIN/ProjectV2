@@ -104,7 +104,7 @@ export default function PrivacyPage() {
           <h2 className="text-h3 text-hi mb-3">
             제4조 (개인정보의 제3자 제공)
           </h2>
-          <div className="rounded-md bg-mint/8 border border-mint/30 p-4 space-y-2">
+          <div className="rounded-md bg-accent/8 border border-accent/30 p-4 space-y-2">
             <p className="text-body text-hi font-medium">
               taxback365는 원칙적으로 이용자의 개인정보를 제3자에게 제공하지
               않습니다.

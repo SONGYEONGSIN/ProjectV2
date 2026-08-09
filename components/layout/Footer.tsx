@@ -28,7 +28,7 @@ export function Footer() {
           <div className="col-span-2 md:col-span-1">
             <Link
               href="/"
-              className="inline-flex items-center gap-2 text-hi hover:text-mint transition-colors"
+              className="inline-flex items-center gap-2 text-hi hover:text-accent transition-colors"
             >
               <LogoMark />
               <span className="font-display font-semibold text-heading-sm tracking-tight">

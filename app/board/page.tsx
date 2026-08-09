@@ -135,7 +135,7 @@ export default function BoardPage() {
       >
         <td className="py-3 px-3 text-center w-14">
           {isPinned ? (
-            <Pin size={14} strokeWidth={2} className="inline text-mint" />
+            <Pin size={14} strokeWidth={2} className="inline text-accent" />
           ) : (
             <span className="text-caption text-mid font-mono tabular-nums">
               {post.id}
@@ -198,7 +198,7 @@ export default function BoardPage() {
           <select
             value={searchType}
             onChange={(e) => setSearchType(e.target.value)}
-            className="h-11 rounded-md border border-edge bg-surface px-3 text-body-sm text-hi focus-visible:outline-none focus-visible:border-mint focus-visible:ring-2 focus-visible:ring-mint/30"
+            className="h-11 rounded-md border border-edge bg-surface px-3 text-body-sm text-hi focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
           >
             <option value="title">제목</option>
             <option value="author">글쓴이</option>
@@ -209,7 +209,7 @@ export default function BoardPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="검색어를 입력하세요"
-            className="flex-1 min-w-0 h-11 rounded-md border border-edge bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-mint focus-visible:ring-2 focus-visible:ring-mint/30"
+            className="flex-1 min-w-0 h-11 rounded-md border border-edge bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
           />
           <Button variant="primary" size="md" onClick={handleSearch}>
             <Search size={15} strokeWidth={1.75} />
@@ -259,7 +259,7 @@ export default function BoardPage() {
                 <tr>
                   <td colSpan={5} className="py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
-                      <div className="w-7 h-7 border-2 border-mint border-t-transparent rounded-full animate-spin" />
+                      <div className="w-7 h-7 border-2 border-accent border-t-transparent rounded-full animate-spin" />
                       <span className="text-body-sm text-mid">
                         불러오는 중…
                       </span>
@@ -311,7 +311,7 @@ export default function BoardPage() {
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={currentPage <= 1}
-            className="w-9 h-9 rounded-md border border-edge bg-surface text-mid hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint"
+            className="w-9 h-9 rounded-md border border-edge bg-surface text-mid hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label="이전 페이지"
           >
             <ChevronLeft size={16} strokeWidth={1.75} />
@@ -329,9 +329,9 @@ export default function BoardPage() {
                 key={pageNum}
                 onClick={() => setCurrentPage(pageNum)}
                 className={clsx(
-                  "w-9 h-9 rounded-md text-body-sm font-medium font-mono tabular-nums flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint",
+                  "w-9 h-9 rounded-md text-body-sm font-medium font-mono tabular-nums flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                   isActive
-                    ? "bg-mint text-ink"
+                    ? "bg-accent text-ink"
                     : "border border-edge bg-surface text-mid hover:bg-surface-2",
                 )}
               >
@@ -342,7 +342,7 @@ export default function BoardPage() {
           <button
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage >= totalPages}
-            className="w-9 h-9 rounded-md border border-edge bg-surface text-mid hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint"
+            className="w-9 h-9 rounded-md border border-edge bg-surface text-mid hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label="다음 페이지"
           >
             <ChevronRight size={16} strokeWidth={1.75} />

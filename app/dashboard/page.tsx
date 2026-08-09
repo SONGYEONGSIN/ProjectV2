@@ -215,8 +215,8 @@ const MOCK_NEWS_ARTICLES = [
 ];
 
 function getUtilizationFill(rate: number): string {
-  if (rate >= 90) return "bg-mint";
-  if (rate >= 70) return "bg-mint";
+  if (rate >= 90) return "bg-accent";
+  if (rate >= 70) return "bg-accent";
   if (rate >= 40) return "bg-amber";
   return "bg-amber";
 }
@@ -421,7 +421,7 @@ export default function DashboardPage() {
               <span
                 className={clsx(
                   "w-1.5 h-1.5 rounded-full",
-                  currentAmount >= 0 ? "bg-mint" : "bg-rose",
+                  currentAmount >= 0 ? "bg-accent" : "bg-rose",
                 )}
               />
               <span className="text-caption font-semibold text-mid uppercase tracking-[0.06em]">
@@ -463,7 +463,7 @@ export default function DashboardPage() {
                 <div
                   className={clsx(
                     "h-full transition-all duration-500 rounded-full",
-                    currentAmount >= 0 ? "bg-mint" : "bg-rose",
+                    currentAmount >= 0 ? "bg-accent" : "bg-rose",
                   )}
                   style={{
                     width: currentAmount >= 0 ? `${goalProgress}%` : "0%",
@@ -508,7 +508,7 @@ export default function DashboardPage() {
                   onClick={() =>
                     setGoalAmount((prev) => Math.max(100000, prev - 100000))
                   }
-                  className="w-9 h-9 rounded-md border border-edge bg-surface hover:bg-surface-2 flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint"
+                  className="w-9 h-9 rounded-md border border-edge bg-surface hover:bg-surface-2 flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   aria-label="목표 금액 감소"
                 >
                   <ChevronDown size={16} strokeWidth={1.75} />
@@ -526,7 +526,7 @@ export default function DashboardPage() {
                   disabled={
                     totalPrepaidTax > 0 && goalAmount >= totalPrepaidTax
                   }
-                  className="w-9 h-9 rounded-md border border-edge bg-surface hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint"
+                  className="w-9 h-9 rounded-md border border-edge bg-surface hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-mid transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   aria-label="목표 금액 증가"
                 >
                   <ChevronUp size={16} strokeWidth={1.75} />
@@ -542,11 +542,11 @@ export default function DashboardPage() {
                       onClick={() => !isDisabled && setGoalAmount(amount)}
                       disabled={isDisabled}
                       className={clsx(
-                        "h-8 rounded-md border text-caption font-mono tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint",
+                        "h-8 rounded-md border text-caption font-mono tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                         isDisabled
                           ? "border-edge bg-surface-2 text-dim cursor-not-allowed"
                           : goalAmount === amount
-                            ? "border-mint bg-mint/10 text-mint font-semibold"
+                            ? "border-accent bg-accent/10 text-accent font-semibold"
                             : "border-edge bg-surface text-mid hover:bg-surface-2",
                       )}
                     >
@@ -561,7 +561,7 @@ export default function DashboardPage() {
                   return (
                     <p className="text-caption text-mid">
                       최적화 시{" "}
-                      <span className="text-mint font-mono tabular-nums">
+                      <span className="text-accent font-mono tabular-nums">
                         {formatKRW(optimizedAmount)}원
                       </span>{" "}
                       달성 가능
@@ -811,7 +811,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-3 w-full bg-surface h-1 rounded-full overflow-hidden">
               <div
-                className="h-full bg-mint"
+                className="h-full bg-accent"
                 style={{
                   width: `${taxDeductLimit > 0 ? Math.round((taxDeductTotal / taxDeductLimit) * 100) : 0}%`,
                 }}
@@ -821,7 +821,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-2 text-caption text-mid">
-          <CheckCircle2 size={14} strokeWidth={1.75} className="text-mint" />
+          <CheckCircle2 size={14} strokeWidth={1.75} className="text-accent" />
           {deductionItems.length}개 항목 중{" "}
           <span className="font-mono tabular-nums text-hi">
             {deductionItems.filter((d) => d.status === "optimal").length}
@@ -876,7 +876,7 @@ export default function DashboardPage() {
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <Badge type={rec.priority} />
                     {rec.potentialSaving > 0 && (
-                      <span className="text-mono-display text-[18px] font-semibold text-mint">
+                      <span className="text-mono-display text-[18px] font-semibold text-accent">
                         -{formatKRW(rec.potentialSaving)}
                         <span className="text-caption text-mid ml-1">원</span>
                       </span>
@@ -887,7 +887,7 @@ export default function DashboardPage() {
                   </h4>
                   <p className="text-caption text-mid">{rec.detail}</p>
                   {rec.action && (
-                    <p className="text-caption text-mint font-medium mt-2">
+                    <p className="text-caption text-accent font-medium mt-2">
                       {rec.action}
                     </p>
                   )}
@@ -1025,7 +1025,7 @@ export default function DashboardPage() {
       <Card
         variant="raised"
         padding="lg"
-        className="bg-mint text-ink border-mint"
+        className="bg-accent text-ink border-accent"
       >
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
@@ -1041,7 +1041,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <Link href="/calculator" className="flex-shrink-0">
-            <span className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-md bg-surface text-hi text-body-sm font-semibold hover:bg-surface/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/30">
+            <span className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-md bg-surface text-hi text-body-sm font-semibold hover:bg-surface/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
               절세 시뮬레이션
               <ArrowRight size={14} strokeWidth={1.75} />
             </span>
@@ -1065,7 +1065,7 @@ export default function DashboardPage() {
               {!aiAdviceLoading && (
                 <button
                   onClick={() => setShowAiModal(false)}
-                  className="w-8 h-8 rounded-md hover:bg-surface-2 flex items-center justify-center text-mid hover:text-hi transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint"
+                  className="w-8 h-8 rounded-md hover:bg-surface-2 flex items-center justify-center text-mid hover:text-hi transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   aria-label="모달 닫기"
                 >
                   <X size={16} strokeWidth={1.75} />

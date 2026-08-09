@@ -94,7 +94,7 @@ export default function SignupPage() {
   };
 
   const fieldClass =
-    "w-full h-11 rounded-md border border-edge bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-mint focus-visible:ring-2 focus-visible:ring-mint/30 transition-colors";
+    "w-full h-11 rounded-md border border-edge bg-surface px-3.5 text-body text-hi placeholder:text-dim hover:border-edge-strong focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 transition-colors";
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-8rem)] px-4 py-12">
@@ -119,14 +119,14 @@ export default function SignupPage() {
           <div className="space-y-2.5">
             <button
               onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-              className="w-full h-11 inline-flex items-center justify-center gap-2.5 rounded-md border border-edge-strong bg-surface text-body-sm font-medium text-hi hover:bg-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/30"
+              className="w-full h-11 inline-flex items-center justify-center gap-2.5 rounded-md border border-edge-strong bg-surface text-body-sm font-medium text-hi hover:bg-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
             >
               <GoogleIcon />
               Google로 시작하기
             </button>
             <button
               onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
-              className="w-full h-11 inline-flex items-center justify-center gap-2.5 rounded-md bg-mint text-ink text-body-sm font-medium hover:brightness-110 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/30"
+              className="w-full h-11 inline-flex items-center justify-center gap-2.5 rounded-md bg-accent text-ink text-body-sm font-medium hover:brightness-110 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
             >
               <GithubIcon />
               GitHub로 시작하기
@@ -231,7 +231,7 @@ export default function SignupPage() {
                 type="checkbox"
                 checked={agreeTerms}
                 onChange={(e) => setAgreeTerms(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-edge-strong text-mint focus:ring-mint"
+                className="mt-0.5 w-4 h-4 rounded border-edge-strong text-accent focus:ring-accent"
               />
               <span className="text-body-sm text-mid leading-[1.5]">
                 <Link

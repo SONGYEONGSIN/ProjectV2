@@ -15,7 +15,7 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const variantClass: Record<Variant, string> = {
   // Dark 핀테크 — subtle tinted bg + accent text
-  success: "bg-mint/12 text-mint",
+  success: "bg-accent/12 text-accent",
   warning: "bg-amber/12 text-amber",
   danger: "bg-rose/15 text-rose",
   info: "bg-sky/12 text-sky",

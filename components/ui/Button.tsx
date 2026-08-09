@@ -11,7 +11,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/40";
+  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 
 const sizeClass: Record<Size, string> = {
   sm: "h-8 px-3 text-caption",
@@ -20,7 +20,7 @@ const sizeClass: Record<Size, string> = {
 
 const variantClass: Record<Variant, string> = {
   primary: clsx(
-    "bg-mint text-ink font-semibold",
+    "bg-accent text-ink font-semibold",
     "hover:brightness-110 active:scale-[0.98]",
   ),
   secondary: clsx(

@@ -107,7 +107,7 @@ export function Navigation() {
         <div className="container mx-auto h-full px-4 md:px-6 max-w-[1200px] flex items-center justify-between">
           <Link
             href="/"
-            className="flex items-center gap-2 text-hi hover:text-mint transition-colors shrink-0"
+            className="flex items-center gap-2 text-hi hover:text-accent transition-colors shrink-0"
             aria-label="taxback365 홈"
           >
             <LogoMark />
@@ -128,7 +128,7 @@ export function Navigation() {
                     className={clsx(
                       "relative px-3 py-2 rounded-md text-body font-medium transition-colors duration-150",
                       active
-                        ? "text-hi after:absolute after:left-3 after:right-3 after:-bottom-[1.05rem] after:h-[2px] after:bg-mint"
+                        ? "text-hi after:absolute after:left-3 after:right-3 after:-bottom-[1.05rem] after:h-[2px] after:bg-accent"
                         : "text-mid hover:text-hi hover:bg-surface",
                     )}
                   >
@@ -189,7 +189,7 @@ export function Navigation() {
                 </Link>
                 <Link
                   href="/signup"
-                  className="inline-flex items-center justify-center h-9 px-4 rounded-full text-body font-semibold bg-mint text-ink hover:brightness-110 active:scale-[0.98] transition-all"
+                  className="inline-flex items-center justify-center h-9 px-4 rounded-full text-body font-semibold bg-accent text-ink hover:brightness-110 active:scale-[0.98] transition-all"
                 >
                   회원가입
                 </Link>
@@ -234,7 +234,7 @@ export function Navigation() {
                 href={href}
                 className={clsx(
                   "flex flex-col items-center justify-center flex-1 h-full gap-0.5 rounded-md transition-colors",
-                  active ? "text-mint" : "text-dim hover:text-hi",
+                  active ? "text-accent" : "text-dim hover:text-hi",
                 )}
               >
                 <Icon size={20} strokeWidth={active ? 2.25 : 1.75} />
